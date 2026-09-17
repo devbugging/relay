@@ -1,0 +1,88 @@
+{
+  "name": "ai-sessions",
+  "displayName": "AI Sessions",
+  "description": "One panel for every AI coding session: Claude, Codex and friends, with forks, modes and todos.",
+  "version": "0.0.1",
+  "private": true,
+  "publisher": "gregorg",
+  "engines": {
+    "vscode": "^1.137.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aiSessions",
+          "title": "AI Sessions",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "aiSessions": [
+        {
+          "type": "webview",
+          "id": "aiSessions.sidebar",
+          "name": "Sessions"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "aiSessions.newSession",
+        "title": "New Session",
+        "category": "AI Sessions",
+        "icon": "$(add)"
+      },
+      {
+        "command": "aiSessions.openAsTab",
+        "title": "Open as Editor Tab",
+        "category": "AI Sessions",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "aiSessions.showTodos",
+        "title": "Show Todos",
+        "category": "AI Sessions",
+        "icon": "$(checklist)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "aiSessions.newSession",
+          "when": "view == aiSessions.sidebar",
+          "group": "navigation@1"
+        },
+        {
+          "command": "aiSessions.showTodos",
+          "when": "view == aiSessions.sidebar",
+          "group": "navigation@2"
+        },
+        {
+          "command": "aiSessions.openAsTab",
+          "when": "view == aiSessions.sidebar",
+          "group": "navigation@3"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p src/webview/tsconfig.json",
+    "vscode:prepublish": "npm run build -- --production"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.3",
+    "@types/vscode": "^1.137.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}
