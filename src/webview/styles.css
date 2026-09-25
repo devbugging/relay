@@ -30,6 +30,8 @@
   --fail: #f47067;
   --fail-bg: rgba(244, 112, 103, 0.10);
   --fail-border: rgba(244, 112, 103, 0.35);
+  /* Your messages: the chat background, a shade darker. */
+  --user-bg: color-mix(in srgb, var(--bg) 72%, #000);
   --claude: #d97757;
   --claude-bg: rgba(217, 119, 87, 0.18);
   --codex: #9d9d9d;
@@ -231,10 +233,14 @@ textarea, input, select { font: inherit; color: inherit; }
 
 .msg { position: relative; display: flex; flex-direction: column; gap: 6px; }
 .msg-user { align-items: stretch; }
+/* Full-width band that bleeds through the chat's side padding, so your text
+   lines up with the reply text instead of sitting in an inset box. */
 .bubble {
-  padding: 8px 12px; border-radius: 6px;
-  background: var(--vscode-input-background, #2b2f36); color: var(--fg-strong); white-space: pre-wrap; word-wrap: break-word;
+  margin: 0 -14px; padding: 10px 14px;
+  background: var(--user-bg); color: var(--fg-strong); white-space: pre-wrap; word-wrap: break-word;
 }
+.app-wide .bubble { margin: 0 -28px; padding: 12px 28px; }
+body.vscode-light { --user-bg: color-mix(in srgb, var(--bg) 94%, #000); }
 /* Sticks to the top of the scroll area while the reply scrolls under it. The
    strip of --bg around it hides the text passing behind. Capped at four lines
    (click to expand) so it never covers the reply; the cap applies in place too,
