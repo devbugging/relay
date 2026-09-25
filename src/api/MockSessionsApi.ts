@@ -1,14 +1,5 @@
 import type { SessionsApi, Unsubscribe } from "./SessionsApi";
-import type {
-  ApprovalDecision,
-  Message,
-  Plan,
-  ProviderInfo,
-  Session,
-  SessionOptions,
-  Todo,
-  ToolEvent,
-} from "./types";
+import { isActive, type ApprovalDecision, type Message, type ProviderInfo, type Session, type SessionOptions, type ToolEvent } from "./types";
 
 const MIN = 60_000;
 
@@ -51,8 +42,6 @@ const STREAM_TEXT =
 export class MockSessionsApi implements SessionsApi {
   private sessions = new Map<string, Session>();
   private messages = new Map<string, Message[]>();
-  private plans = new Map<string, Plan>();
-  private todos: Todo[] = [];
   private listeners = new Set<() => void>();
   private timers = new Set<ReturnType<typeof setTimeout>>();
   private disposed = false;
@@ -75,13 +64,6 @@ export class MockSessionsApi implements SessionsApi {
     return (this.messages.get(sessionId) || []).map((m) => ({ ...m }));
   }
 
-  async getPlan(sessionId: string): Promise<Plan | undefined> {
-    const session = this.sessions.get(sessionId);
-    if (!session) return undefined;
-    const root = session.parentId && this.plans.has(session.parentId) ? session.parentId : sessionId;
-    return this.plans.get(root);
-  }
-
   // -- writes --------------------------------------------------------------
 
   async createSession(options: SessionOptions, cwd: string): Promise<Session> {
@@ -95,6 +77,8 @@ export class MockSessionsApi implements SessionsApi {
       folder: cwd.split("/").pop() || cwd,
       createdAt: now,
       lastActivityAt: now,
+      unread: false,
+      archived: false,
       transcriptPath: `${cwd}/.ai/sessions/${now}.jsonl`,
     };
     this.sessions.set(session.id, session);
@@ -111,6 +95,9 @@ export class MockSessionsApi implements SessionsApi {
     if (list.length === 0) session.title = text.length > 48 ? text.slice(0, 45) + "…" : text;
     list.push({ id: nextId("m"), role: "user", text, createdAt: Date.now() });
     this.messages.set(sessionId, list);
+    for (let s: Session | undefined = session; s; s = s.parentId ? this.sessions.get(s.parentId) : undefined) {
+      s.archived = false;
+    }
     this.touch(session, "running");
     this.streamReply(sessionId, STREAM_TEXT);
   }
@@ -129,11 +116,12 @@ export class MockSessionsApi implements SessionsApi {
       status: "done",
       createdAt: now,
       lastActivityAt: now,
+      unread: false,
+      archived: false,
       parentId: parent.id,
       forkedFromMessageId: kept.length ? kept[kept.length - 1].id : undefined,
       forkedFromIndex: kept.length,
       pendingApproval: undefined,
-      role: undefined,
       transcriptPath: `${parent.cwd}/.ai/sessions/${now}.jsonl`,
     };
     this.sessions.set(fork.id, fork);
@@ -166,7 +154,7 @@ export class MockSessionsApi implements SessionsApi {
     const tool: ToolEvent = { id: nextId("t"), kind: "run", label: "Ran", target: approval.detail, detail: "exit 0", ok: true };
     list.push({ id: nextId("m"), role: "assistant", text: "", createdAt: Date.now(), tools: [tool] });
     this.touch(session, "running");
-    this.streamReply(sessionId, "Worktree created. Continuing with the spawn logic now that each worker has its own checkout.");
+    this.streamReply(sessionId, "Migration applied. Running the test suite against the new schema now.");
   }
 
   async renameSession(sessionId: string, title: string): Promise<void> {
@@ -176,26 +164,24 @@ export class MockSessionsApi implements SessionsApi {
     this.emit();
   }
 
-  async listTodos(): Promise<Todo[]> {
-    return this.todos.map((t) => ({ ...t }));
-  }
-
-  async addTodo(text: string, sourceSessionId?: string): Promise<Todo> {
-    const todo: Todo = { id: nextId("todo"), text, done: false, createdAt: Date.now(), sourceSessionId };
-    this.todos.unshift(todo);
-    this.emit();
-    return todo;
-  }
-
-  async toggleTodo(todoId: string): Promise<void> {
-    const todo = this.todos.find((t) => t.id === todoId);
-    if (!todo) return;
-    todo.done = !todo.done;
+  async markSeen(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session || !session.unread) return;
+    session.unread = false;
     this.emit();
   }
 
-  async removeTodo(todoId: string): Promise<void> {
-    this.todos = this.todos.filter((t) => t.id !== todoId);
+  async archiveSession(sessionId: string): Promise<void> {
+    const archive = (id: string) => {
+      const s = this.sessions.get(id);
+      if (!s) return;
+      if (!isActive(s)) {
+        s.archived = true;
+        s.unread = false;
+      }
+      for (const child of this.sessions.values()) if (child.parentId === id) archive(child.id);
+    };
+    archive(sessionId);
     this.emit();
   }
 
@@ -218,6 +204,9 @@ export class MockSessionsApi implements SessionsApi {
   }
 
   private touch(session: Session, status: Session["status"]): void {
+    const wasActive = isActive(session);
+    const nowFinished = status === "done" || status === "failed";
+    if (wasActive && nowFinished) session.unread = true;
     session.status = status;
     session.lastActivityAt = Date.now();
     this.emit();
@@ -232,7 +221,7 @@ export class MockSessionsApi implements SessionsApi {
   }
 
   /** Appends an assistant message and reveals it a few words at a time. */
-  private streamReply(sessionId: string, fullText: string): void {
+  private streamReply(sessionId: string, fullText: string, stepMs = 180): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
     const list = this.messages.get(sessionId) || [];
@@ -253,7 +242,7 @@ export class MockSessionsApi implements SessionsApi {
         return;
       }
       this.emit();
-      this.later(180 + Math.random() * 140, step);
+      this.later(stepMs + Math.random() * 140, step);
     };
     this.later(400, step);
   }
@@ -262,24 +251,29 @@ export class MockSessionsApi implements SessionsApi {
     const now = Date.now();
     const cwd = this.cwd;
     const folder = cwd.split("/").pop() || cwd;
+    const base = (id: string, provider: Session["options"]["provider"], model: string) => ({
+      id,
+      options: { provider, model, effort: "medium" as const },
+      cwd,
+      folder,
+      unread: false,
+      archived: false,
+      transcriptPath: `${cwd}/.ai/sessions/${id}.jsonl`,
+    });
     const put = (s: Session, msgs: Message[]) => {
       this.sessions.set(s.id, s);
       this.messages.set(s.id, msgs);
       return s;
     };
 
-    // Running session with a fork.
-    const running = put(
+    // Working: a running session with a running fork, and one waiting for approval.
+    const parse = put(
       {
-        id: "s-parse",
+        ...base("s-parse", "claude", "claude-opus-5"),
         title: "Refactor parseConfig to throw on unknown keys",
         status: "running",
-        options: { provider: "claude", model: "claude-opus-5", effort: "high", mode: "code" },
-        cwd,
-        folder,
         createdAt: now - 2 * MIN - 14_000,
         lastActivityAt: now,
-        transcriptPath: `${cwd}/.ai/sessions/s-parse.jsonl`,
       },
       [
         { id: "m-p1", role: "user", text: "Implement parseConfig() in src/config.ts. Unknown keys should throw, not warn.", createdAt: now - 2 * MIN },
@@ -303,22 +297,18 @@ export class MockSessionsApi implements SessionsApi {
         { id: "m-p4", role: "user", text: "Good. Now handle the nested sections validation you skipped.", createdAt: now - 30_000 },
       ],
     );
-    this.streamReply(running.id, STREAM_TEXT);
+    this.streamReply(parse.id, STREAM_TEXT, 600);
 
-    put(
+    const loadenv = put(
       {
-        id: "s-loadenv",
+        ...base("s-loadenv", "codex", "gpt-5.5"),
         title: "Change loadEnv to use parseConfig",
         status: "running",
-        options: { provider: "codex", model: "gpt-5.5", effort: "medium", mode: "code" },
-        cwd,
-        folder,
         createdAt: now - 41_000,
         lastActivityAt: now,
-        parentId: running.id,
+        parentId: parse.id,
         forkedFromMessageId: "m-p3",
-        forkedFromIndex: 12,
-        transcriptPath: `${cwd}/.ai/sessions/s-loadenv.jsonl`,
+        forkedFromIndex: 3,
       },
       [
         { id: "m-l1", role: "user", text: "Now also make loadEnv() go through parseConfig so both paths validate the same way.", createdAt: now - 41_000 },
@@ -331,211 +321,103 @@ export class MockSessionsApi implements SessionsApi {
             { id: "t4", kind: "read", label: "Read", target: "src/env.ts" },
             { id: "t5", kind: "read", label: "Read", target: "src/index.ts" },
           ],
-          streaming: true,
+        },
+      ],
+    );
+    this.streamReply(loadenv.id, "loadEnv now builds a raw object from process.env and hands it to parseConfig, so unknown keys fail the same way in both paths.", 350);
+
+    put(
+      {
+        ...base("s-migrate", "codex", "gpt-5.5"),
+        title: "Migrate rollouts to sqlite",
+        status: "waiting",
+        createdAt: now - 6 * MIN,
+        lastActivityAt: now - 40_000,
+        pendingApproval: { kind: "bash", summary: "wants to run a command", detail: "npm run db:migrate -- --to latest" },
+      },
+      [
+        { id: "m-g1", role: "user", text: "Move rollout state from the JSON file into sqlite.", createdAt: now - 6 * MIN },
+        {
+          id: "m-g2",
+          role: "assistant",
+          text: "Schema and migration are written. I need to run the migration to check it applies cleanly.",
+          createdAt: now - 40_000,
+          tools: [{ id: "t6", kind: "write", label: "Wrote", target: "migrations/004_rollouts.sql", added: 31, removed: 0 }],
         },
       ],
     );
 
-    // Feature-mode session waiting for approval, with workers.
-    const feature = put(
-      {
-        id: "s-feature",
-        title: "Feature: worktree per worker",
-        status: "waiting",
-        options: { provider: "codex", model: "gpt-5.5", effort: "high", mode: "feature" },
-        cwd,
-        folder,
-        createdAt: now - 14 * MIN,
-        lastActivityAt: now - 40_000,
-        pendingApproval: {
-          kind: "bash",
-          summary: "worker 2 wants to run a command",
-          detail: "git worktree add ../ai-dev-w2 -b feat/worker-2",
-        },
-        transcriptPath: `${cwd}/.ai/sessions/s-feature.jsonl`,
-      },
-      [
-        {
-          id: "m-f1",
-          role: "user",
-          text: "Each feature worker should run in its own git worktree so parallel edits don't collide. Plan it, then implement with workers.",
-          createdAt: now - 14 * MIN,
-        },
-        {
-          id: "m-f2",
-          role: "assistant",
-          text: "Plan written to .ai/plans/worktree-per-worker.md. Three tasks, two independent, one that depends on both.",
-          createdAt: now - 12 * MIN,
-          tools: [
-            { id: "t6", kind: "write", label: "Wrote", target: ".ai/plans/worktree-per-worker.md" },
-            { id: "t7", kind: "spawn", label: "Spawned", target: "worker 1, worker 2", detail: "parallel" },
-            { id: "t8", kind: "finish", label: "worker 1 finished", target: "src/worktree.ts", added: 118, removed: 0, ok: true },
-          ],
-        },
-        { id: "m-f3", role: "assistant", text: "Waiting for worker 2, then I'll queue the reviewer.", createdAt: now - 40_000, streaming: true },
-      ],
-    );
-    this.plans.set(feature.id, {
-      sessionId: feature.id,
-      path: ".ai/plans/worktree-per-worker.md",
-      tasks: [
-        { id: "p1", index: 1, title: "Worktree helper module", status: "done", assignee: "worker 1", note: "Claude Sonnet 5 · 3m 12s" },
-        { id: "p2", index: 2, title: "Spawn workers inside worktrees", status: "waiting", assignee: "worker 2", note: "Codex gpt-5.5 · waiting for approval" },
-        { id: "p3", index: 3, title: "Merge back and clean up", status: "queued", note: "depends on 1, 2 · then reviewer", dependsOn: ["p1", "p2"] },
-      ],
-    });
-    put(
-      {
-        id: "s-w1",
-        title: "worker 1 · worktree helper",
-        status: "done",
-        options: { provider: "claude", model: "claude-sonnet-5", effort: "medium", mode: "code" },
-        cwd,
-        folder,
-        createdAt: now - 11 * MIN,
-        lastActivityAt: now - 8 * MIN,
-        parentId: feature.id,
-        role: "worker",
-        transcriptPath: `${cwd}/.ai/sessions/s-w1.jsonl`,
-      },
-      [
-        { id: "m-w1", role: "user", text: "Task 1 from the plan: implement a worktree helper module in src/worktree.ts.", createdAt: now - 11 * MIN },
-        {
-          id: "m-w2",
-          role: "assistant",
-          text: "Added createWorktree, removeWorktree and listWorktrees with tests.",
-          createdAt: now - 8 * MIN,
-          tools: [{ id: "t9", kind: "write", label: "Wrote", target: "src/worktree.ts", added: 118, removed: 0 }],
-        },
-      ],
-    );
-    put(
-      {
-        id: "s-w2",
-        title: "worker 2 · spawn in worktree",
-        status: "waiting",
-        options: { provider: "codex", model: "gpt-5.5", effort: "high", mode: "code" },
-        cwd,
-        folder,
-        createdAt: now - 11 * MIN,
-        lastActivityAt: now - 40_000,
-        parentId: feature.id,
-        role: "worker",
-        pendingApproval: { kind: "bash", summary: "wants to run a command", detail: "git worktree add ../ai-dev-w2 -b feat/worker-2" },
-        transcriptPath: `${cwd}/.ai/sessions/s-w2.jsonl`,
-      },
-      [
-        { id: "m-w3", role: "user", text: "Task 2 from the plan: spawn each worker inside its own worktree.", createdAt: now - 11 * MIN },
-        { id: "m-w4", role: "assistant", text: "I need a worktree to test against.", createdAt: now - 40_000 },
-      ],
-    );
-    put(
-      {
-        id: "s-rev",
-        title: "reviewer · queued",
-        status: "queued",
-        options: { provider: "claude", model: "claude-opus-5", effort: "high", mode: "talk" },
-        cwd,
-        folder,
-        createdAt: now - 11 * MIN,
-        lastActivityAt: now - 11 * MIN,
-        parentId: feature.id,
-        role: "reviewer",
-        transcriptPath: `${cwd}/.ai/sessions/s-rev.jsonl`,
-      },
-      [],
-    );
-
-    // Done sessions, one with a fork.
+    // Ready to review: finished, not opened yet. One has a fork that was already read.
     const mock = put(
       {
-        id: "s-mock",
+        ...base("s-mock", "claude", "claude-sonnet-5"),
         title: "Session panel mock in HTML",
         status: "done",
-        options: { provider: "claude", model: "claude-sonnet-5", effort: "medium", mode: "talk" },
-        cwd,
-        folder,
+        unread: true,
         createdAt: now - 25 * MIN,
         lastActivityAt: now - 4 * MIN,
-        transcriptPath: `${cwd}/.ai/sessions/s-mock.jsonl`,
       },
       [
         { id: "m-m1", role: "user", text: "Make a simple mock of the sessions panel in HTML and CSS.", createdAt: now - 25 * MIN },
-        { id: "m-m2", role: "assistant", text: "Three artboards: sidebar with chat, sidebar with the older sessions expanded, and a wide editor-tab layout.", createdAt: now - 4 * MIN },
+        { id: "m-m2", role: "assistant", text: "Two artboards: the sidebar with chat, and the sidebar with past sessions expanded.", createdAt: now - 4 * MIN },
       ],
     );
     put(
       {
-        id: "s-mock-grid",
+        ...base("s-mock-grid", "claude", "claude-sonnet-5"),
         title: "Try alternative with grid layout",
         status: "done",
-        options: { provider: "claude", model: "claude-sonnet-5", effort: "low", mode: "talk" },
-        cwd,
-        folder,
         createdAt: now - 9 * MIN,
         lastActivityAt: now - 6 * MIN,
         parentId: mock.id,
         forkedFromMessageId: "m-m2",
         forkedFromIndex: 2,
-        transcriptPath: `${cwd}/.ai/sessions/s-mock-grid.jsonl`,
       },
       [
-        { id: "m-g1", role: "user", text: "Same thing but with a CSS grid instead of flex.", createdAt: now - 9 * MIN },
-        { id: "m-g2", role: "assistant", text: "Grid version done, it lines up the fork tree columns better.", createdAt: now - 6 * MIN },
+        { id: "m-mg1", role: "user", text: "Same thing but with a CSS grid instead of flex.", createdAt: now - 9 * MIN },
+        { id: "m-mg2", role: "assistant", text: "Grid version done, it lines up the fork tree columns better.", createdAt: now - 6 * MIN },
       ],
     );
     put(
       {
-        id: "s-rtsp",
-        title: "Fix RTSP camera timeout",
-        status: "done",
-        options: { provider: "codex", model: "gpt-5.5", effort: "low", mode: "code" },
-        cwd: "/Users/gregorg/Dev/arhipedija",
-        folder: "arhipedija",
-        createdAt: now - 60 * MIN,
-        lastActivityAt: now - 38 * MIN,
-        transcriptPath: "/Users/gregorg/Dev/arhipedija/.ai/sessions/s-rtsp.jsonl",
+        ...base("s-lint", "codex", "gpt-5.5-mini"),
+        title: "Fix eslint warnings in webview",
+        status: "failed",
+        unread: true,
+        createdAt: now - 18 * MIN,
+        lastActivityAt: now - 11 * MIN,
       },
       [
-        { id: "m-r1", role: "user", text: "The RTSP stream drops after 30s, find out why.", createdAt: now - 60 * MIN },
-        { id: "m-r2", role: "assistant", text: "The keepalive was never sent. Added a GET_PARAMETER ping every 20s.", createdAt: now - 38 * MIN },
+        { id: "m-e1", role: "user", text: "Clear the eslint warnings under src/webview.", createdAt: now - 18 * MIN },
+        { id: "m-e2", role: "assistant", text: "Stopped: eslint is not installed in this project, and I was told not to add dependencies.", createdAt: now - 11 * MIN },
       ],
     );
 
-    // Older than an hour: collapsed by default.
-    const older: Array<[string, string, Session["options"]["provider"], number, Session["status"], string]> = [
-      ["s-o1", "Plan: instagram comment feed", "claude", 3 * 60, "done", "agent0"],
-      ["s-o2", "Migrate rollouts to sqlite", "codex", 26 * 60, "failed", folder],
-      ["s-o3", "Replace Nacrt with Projektni Pogoji", "codex", 27 * 60, "done", "arhipedija"],
-      ["s-o4", "Talk: agent0 architecture options", "claude", 2 * 24 * 60, "done", "agent0"],
-      ["s-o5", "Lighthouse fixes for landing", "claude", 3 * 24 * 60, "done", "landing"],
-      ["s-o6", "Write ADR for session storage", "claude", 4 * 24 * 60, "done", folder],
+    // Past: opened, not completed. Two inside the 2 hour window, the rest older.
+    const past: Array<[string, string, Session["options"]["provider"], number, Session["status"], boolean]> = [
+      ["s-rtsp", "Fix RTSP camera timeout", "codex", 38, "done", false],
+      ["s-readme", "Rewrite README intro", "claude", 95, "done", false],
+      ["s-adr", "Write ADR for session storage", "claude", 50, "done", true],
+      ["s-o1", "Plan: instagram comment feed", "claude", 3 * 60, "done", false],
+      ["s-o2", "Replace Nacrt with Projektni Pogoji", "codex", 27 * 60, "done", false],
+      ["s-o3", "Talk: agent0 architecture options", "claude", 2 * 24 * 60, "done", true],
+      ["s-o4", "Lighthouse fixes for landing", "claude", 3 * 24 * 60, "failed", false],
     ];
-    for (const [id, title, provider, minutesAgo, status, dir] of older) {
+    for (const [id, title, provider, minutesAgo, status, archived] of past) {
       put(
         {
-          id,
+          ...base(id, provider, provider === "claude" ? "claude-sonnet-5" : "gpt-5.5"),
           title,
           status,
-          options: { provider, model: provider === "claude" ? "claude-sonnet-5" : "gpt-5.5", effort: "medium", mode: "code" },
-          cwd: `/Users/gregorg/Dev/${dir}`,
-          folder: dir,
+          archived,
           createdAt: now - minutesAgo * MIN - 10 * MIN,
           lastActivityAt: now - minutesAgo * MIN,
-          transcriptPath: `/Users/gregorg/Dev/${dir}/.ai/sessions/${id}.jsonl`,
         },
         [
           { id: `${id}-u`, role: "user", text: title, createdAt: now - minutesAgo * MIN - 10 * MIN },
-          { id: `${id}-a`, role: "assistant", text: status === "failed" ? "Stopped: the migration hit a locked database." : "Done.", createdAt: now - minutesAgo * MIN },
+          { id: `${id}-a`, role: "assistant", text: status === "failed" ? "Stopped: the build failed before the audit could run." : "Done.", createdAt: now - minutesAgo * MIN },
         ],
       );
     }
-
-    this.todos = [
-      { id: "todo-1", text: "Nested section validation in parseConfig", done: false, createdAt: now - 30 * MIN, sourceSessionId: "s-parse" },
-      { id: "todo-2", text: "Summarize old transcripts with a cheap model before hand-off", done: false, createdAt: now - 50 * MIN },
-      { id: "todo-3", text: "Decide: pi RPC vs vendor CLIs as backend", done: false, createdAt: now - 70 * MIN },
-      { id: "todo-4", text: "Mock the panel UI", done: true, createdAt: now - 90 * MIN, sourceSessionId: "s-mock" },
-    ];
   }
 }

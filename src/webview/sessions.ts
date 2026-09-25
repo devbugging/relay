@@ -1,4 +1,4 @@
-import type { Session, SessionStatus } from "../api/types";
+import { isActive, type Session } from "../api/types";
 import type { UiState } from "../panel/protocol";
 import { icons } from "./icons";
 import { ago, elapsed, esc } from "./util";
@@ -8,7 +8,8 @@ interface Node {
   children: Node[];
 }
 
-const ORDER: Record<SessionStatus, number> = { waiting: 0, running: 1, queued: 2, done: 3, failed: 3 };
+/** Where a session and its forks are listed. A tree moves as one unit, placed by its most active member. */
+type Group = "working" | "review" | "past" | "archived";
 
 function buildTree(sessions: Session[]): Node[] {
   const byId = new Map<string, Node>();
@@ -27,17 +28,29 @@ function buildTree(sessions: Session[]): Node[] {
   return roots;
 }
 
+function members(n: Node): Session[] {
+  return [n.session, ...n.children.flatMap(members)];
+}
+
 function latestActivity(n: Node): number {
-  return Math.max(n.session.lastActivityAt, ...n.children.map(latestActivity));
+  return Math.max(...members(n).map((s) => s.lastActivityAt));
 }
 
-function isActive(n: Node): boolean {
-  const s = n.session.status;
-  return s === "running" || s === "waiting" || n.children.some(isActive);
+function groupOf(n: Node): Group {
+  const all = members(n);
+  if (all.some(isActive)) return "working";
+  const live = all.filter((s) => !s.archived);
+  if (live.length === 0) return "archived";
+  return live.some((s) => s.unread) ? "review" : "past";
 }
 
-function statusIcon(status: SessionStatus): string {
-  switch (status) {
+/** A fork whose whole subtree was completed stays hidden unless all past sessions are shown. */
+function completed(n: Node): boolean {
+  return members(n).every((s) => s.archived);
+}
+
+function statusIcon(s: Session): string {
+  switch (s.status) {
     case "running":
       return `<span class="status status-running"></span>`;
     case "waiting":
@@ -46,9 +59,15 @@ function statusIcon(status: SessionStatus): string {
       return `<span class="status status-done">${icons.check}</span>`;
     case "failed":
       return `<span class="status status-failed">${icons.cross}</span>`;
-    case "queued":
-      return `<span class="status status-queued">${icons.circle}</span>`;
   }
+}
+
+function cardClass(s: Session): string {
+  if (s.status === "running") return "card-running";
+  if (s.status === "waiting") return "card-waiting";
+  if (s.archived) return "card-archived";
+  if (s.unread) return s.status === "failed" ? "card-failed" : "card-done";
+  return "card-past";
 }
 
 function modelLabel(state: UiState, s: Session): string {
@@ -63,27 +82,26 @@ function providerLabel(state: UiState, s: Session): string {
 }
 
 function providerBadge(state: UiState, s: Session): string {
-  const p = state.providers.find((x) => x.id === s.options.provider);
-  return `<span class="provider provider-${esc(s.options.provider)}">${esc(p ? p.label : s.options.provider)}</span>`;
+  return `<span class="provider provider-${esc(s.options.provider)}">${esc(providerLabel(state, s))}</span>`;
 }
 
 function timeCell(s: Session, now: number): string {
   if (s.status === "running") return elapsed(s.createdAt, now);
   if (s.status === "waiting") return "Needs approval";
-  if (s.status === "queued") return "queued";
   return ago(s.lastActivityAt, now);
 }
 
 function card(state: UiState, node: Node, depth: number): string {
   const s = node.session;
   const isSel = s.id === state.selectedSessionId;
-  const forkNote = s.forkedFromIndex ? `from msg ${s.forkedFromIndex} · ` : s.role ? `${s.role} · ` : "";
+  const forkNote = s.forkedFromIndex ? `from msg ${s.forkedFromIndex} · ` : "";
   const meta =
     depth === 0
-      ? `${providerBadge(state, s)}<span class="ellipsis">${esc(modelLabel(state, s))} · ${esc(s.options.effort)} · ${esc(s.options.mode)}</span>
+      ? `${providerBadge(state, s)}<span class="ellipsis">${esc(modelLabel(state, s))} · ${esc(s.options.effort)}</span>
          <span class="right mono">${esc(s.pendingApproval ? `${s.pendingApproval.kind}: ${s.pendingApproval.detail.split(" ").slice(0, 2).join(" ")}` : s.folder)}</span>`
       : `<span class="ellipsis">${esc(forkNote)}${esc(providerLabel(state, s))} · ${esc(modelLabel(state, s))} · ${esc(s.options.effort)}</span>`;
-  const canStop = s.status === "running" || s.status === "waiting";
+  const canStop = isActive(s);
+  const canComplete = !isActive(s) && !s.archived;
   const approval =
     s.pendingApproval && (isSel || depth === 0)
       ? `<div class="card-actions">
@@ -92,21 +110,24 @@ function card(state: UiState, node: Node, depth: number): string {
            <button class="btn" data-action="approve" data-id="${esc(s.id)}" data-decision="always">Always for this session</button>
          </div>`
       : "";
-  const children = node.children.length
+  const visibleChildren = node.children.filter((c) => state.showAllPast || !completed(c));
+  const children = visibleChildren.length
     ? `<div class="children">
-         ${node.children.map((c) => `<div class="child"><div class="branch"></div>${card(state, c, depth + 1)}</div>`).join("")}
-         ${isSel && !s.role ? `<div class="child"><div class="branch"></div><button class="fork-slot" data-action="fork" data-id="${esc(s.id)}">${icons.plus} Fork from latest message</button></div>` : ""}
+         ${visibleChildren.map((c) => `<div class="child"><div class="branch"></div>${card(state, c, depth + 1)}</div>`).join("")}
+         ${isSel ? `<div class="child"><div class="branch"></div><button class="fork-slot" data-action="fork" data-id="${esc(s.id)}">${icons.plus} Fork from latest message</button></div>` : ""}
        </div>`
     : "";
-  return `<div class="card card-${esc(s.status)} ${isSel ? "selected" : ""}" data-action="select" data-id="${esc(s.id)}">
+  return `<div class="card ${cardClass(s)} ${s.unread ? "unread" : ""} ${isSel ? "selected" : ""}" data-action="select" data-id="${esc(s.id)}">
     <div class="card-row">
-      ${statusIcon(s.status)}
+      ${statusIcon(s)}
       <span class="card-title ellipsis grow">${esc(s.title)}</span>
       <span class="card-tools">
         <button class="icon-btn sm" data-action="fork" data-id="${esc(s.id)}" title="Fork session" aria-label="Fork session">${icons.fork}</button>
         ${canStop ? `<button class="icon-btn sm" data-action="stop" data-id="${esc(s.id)}" title="Stop" aria-label="Stop">${icons.stop}</button>` : ""}
+        ${canComplete ? `<button class="icon-btn sm" data-action="complete" data-id="${esc(s.id)}" title="Complete" aria-label="Complete session">${icons.check}</button>` : ""}
       </span>
-      <span class="card-time">${esc(timeCell(s, state.now))}</span>
+      ${s.unread ? `<span class="unread-dot" title="Finished, not opened yet"></span>` : ""}
+      <span class="card-time">${esc(s.archived ? "completed" : timeCell(s, state.now))}</span>
     </div>
     <div class="card-meta">${meta}</div>
     ${approval}
@@ -114,47 +135,44 @@ function card(state: UiState, node: Node, depth: number): string {
   </div>`;
 }
 
-function olderRow(state: UiState, node: Node): string {
-  const s = node.session;
-  const p = state.providers.find((x) => x.id === s.options.provider);
-  const isSel = s.id === state.selectedSessionId;
-  return `<div class="row ${isSel ? "selected" : ""}" data-action="select" data-id="${esc(s.id)}">
-    ${statusIcon(s.status)}
-    <span class="ellipsis grow">${esc(s.title)}</span>
-    <span class="small">${esc(p ? p.label : s.options.provider)}</span>
-    <span class="small">${esc(ago(latestActivity(node), state.now))}</span>
-  </div>`;
+function group(state: UiState, title: string, note: string, nodes: Node[]): string {
+  return `<div class="group-head"><span>${esc(title)}</span><span class="count">${esc(note)}</span></div>
+    ${nodes.map((n) => card(state, n, 0)).join("")}`;
 }
 
 export function renderSessions(state: UiState): string {
-  const roots = buildTree(state.sessions);
-  const cutoff = state.now - state.olderThresholdMs;
-  const active: Node[] = [];
+  const cutoff = state.now - state.pastWindowMs;
+  const working: Node[] = [];
+  const review: Node[] = [];
+  const recent: Node[] = [];
   const older: Node[] = [];
-  for (const r of roots) (isActive(r) || latestActivity(r) >= cutoff ? active : older).push(r);
-  active.sort((a, b) => ORDER[a.session.status] - ORDER[b.session.status] || latestActivity(b) - latestActivity(a));
-  older.sort((a, b) => latestActivity(b) - latestActivity(a));
+  for (const root of buildTree(state.sessions)) {
+    const g = groupOf(root);
+    if (g === "working") working.push(root);
+    else if (g === "review") review.push(root);
+    else if (g === "past" && latestActivity(root) >= cutoff) recent.push(root);
+    else older.push(root);
+  }
+  const byLatest = (a: Node, b: Node) => latestActivity(b) - latestActivity(a);
+  const waitingFirst = (n: Node) => (members(n).some((s) => s.status === "waiting") ? 0 : 1);
+  working.sort((a, b) => waitingFirst(a) - waitingFirst(b) || byLatest(a, b));
+  review.sort(byLatest);
+  const past = (state.showAllPast ? recent.concat(older) : recent).sort(byLatest);
 
-  const running = state.sessions.filter((s) => s.status === "running").length;
-  const waiting = state.sessions.filter((s) => s.status === "waiting").length;
-  const summary = [running ? `${running} running` : "", waiting ? `${waiting} waiting` : ""].filter(Boolean).join(" · ") || "idle";
-
-  const olderBlock = older.length
-    ? `<button class="older-toggle ${state.showOlder ? "open" : ""}" data-action="toggleOlder">${icons.chevron}
-         ${state.showOlder ? "Hide older sessions" : `Show ${older.length} older session${older.length === 1 ? "" : "s"}`}
-         <span class="muted">· inactive over 1h</span></button>
-       ${state.showOlder ? older.map((n) => olderRow(state, n)).join("") : ""}`
+  const hours = Math.round(state.pastWindowMs / 3_600_000);
+  const toggle = older.length
+    ? `<button class="older-toggle ${state.showAllPast ? "open" : ""}" data-action="toggleAllPast">${icons.chevron}
+         ${state.showAllPast ? "Hide older and completed" : `Show all past sessions <span class="muted">· ${older.length} more</span>`}</button>`
     : "";
+  const nothing = !working.length && !review.length && !past.length;
 
   return `<div class="sessions">
-    <div class="section-head">
-      ${state.layout === "wide" ? "" : icons.chevron}
-      <span>Sessions</span><span class="count">${esc(summary)}</span>
-      ${state.layout === "wide" ? `<span class="grow"></span><button class="btn btn-primary" data-action="newSession">${icons.plus} New</button>` : ""}
-    </div>
     <div class="sessions-list">
-      ${active.length ? active.map((n) => card(state, n, 0)).join("") : `<div class="empty">No active sessions. Start one below.</div>`}
-      ${olderBlock}
+      ${working.length ? group(state, "Working", String(working.length), working) : ""}
+      ${review.length ? group(state, "Ready to review", String(review.length), review) : ""}
+      ${past.length ? group(state, "Past", state.showAllPast ? "all" : `last ${hours}h`, past) : ""}
+      ${nothing ? `<div class="empty">No recent sessions. Type below to start one.</div>` : ""}
+      ${toggle}
     </div>
   </div>`;
 }

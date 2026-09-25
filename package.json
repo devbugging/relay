@@ -1,7 +1,7 @@
 {
   "name": "ai-sessions",
   "displayName": "AI Sessions",
-  "description": "One panel for every AI coding session: Claude, Codex and friends, with forks, modes and todos.",
+  "description": "One panel for every AI coding session: Claude, Codex and friends, with forks.",
   "version": "0.0.1",
   "private": true,
   "publisher": "gregorg",
@@ -39,18 +39,6 @@
         "title": "New Session",
         "category": "AI Sessions",
         "icon": "$(add)"
-      },
-      {
-        "command": "aiSessions.openAsTab",
-        "title": "Open as Editor Tab",
-        "category": "AI Sessions",
-        "icon": "$(open-preview)"
-      },
-      {
-        "command": "aiSessions.showTodos",
-        "title": "Show Todos",
-        "category": "AI Sessions",
-        "icon": "$(checklist)"
       }
     ],
     "menus": {
@@ -59,16 +47,6 @@
           "command": "aiSessions.newSession",
           "when": "view == aiSessions.sidebar",
           "group": "navigation@1"
-        },
-        {
-          "command": "aiSessions.showTodos",
-          "when": "view == aiSessions.sidebar",
-          "group": "navigation@2"
-        },
-        {
-          "command": "aiSessions.openAsTab",
-          "when": "view == aiSessions.sidebar",
-          "group": "navigation@3"
         }
       ]
     }

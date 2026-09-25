@@ -1,10 +1,8 @@
-import type { Effort, Mode, ProviderId } from "../api/types";
+import type { Effort, ProviderId } from "../api/types";
 import type { UiState } from "../panel/protocol";
 import { icons } from "./icons";
 import { composerOptions, local, post } from "./state";
 import { esc } from "./util";
-
-const MODES: Mode[] = ["talk", "code", "feature"];
 
 /**
  * The composer is rendered once and then only its chips are refreshed, so
@@ -16,13 +14,14 @@ export function renderComposer(): string {
       <textarea id="input" rows="3" aria-label="Message" placeholder="Message this session…  ⌘↵ to send"></textarea>
       <div class="composer-bar" id="chips"></div>
     </div>
-    <div id="todos-strip"></div>
   </div>`;
 }
 
 export function refreshChips(state: UiState): void {
   const el = document.getElementById("chips");
   if (!el) return;
+  const input = document.getElementById("input") as HTMLTextAreaElement | null;
+  if (input) input.placeholder = state.selectedSessionId ? "Message this session…  ⌘↵ to send" : "Start a new session…  ⌘↵ to send";
   const opts = composerOptions(state);
   const provider = state.providers.find((p) => p.id === opts.provider) || state.providers[0];
   const models = provider ? provider.models : [];
@@ -38,11 +37,8 @@ export function refreshChips(state: UiState): void {
   const effortSel = `<select class="chip" id="chip-effort" aria-label="Effort">
       ${efforts.map((e) => `<option value="${esc(e)}" ${e === opts.effort ? "selected" : ""}>${esc(e)}</option>`).join("")}
     </select>`;
-  const modeSel = `<select class="chip chip-mode-${esc(opts.mode)}" id="chip-mode" aria-label="Mode">
-      ${MODES.map((m) => `<option value="${esc(m)}" ${m === opts.mode ? "selected" : ""}>${esc(m)}</option>`).join("")}
-    </select>`;
 
-  el.innerHTML = `${providerSel}${modelSel}${effortSel}${modeSel}<span class="grow"></span>
+  el.innerHTML = `${providerSel}${modelSel}${effortSel}<span class="grow"></span>
     <button class="icon-btn" title="Attach" aria-label="Attach file">${icons.attach}</button>
     <button class="send" id="send" title="Send (⌘↵)" aria-label="Send">${icons.send}</button>`;
 
@@ -59,10 +55,6 @@ export function refreshChips(state: UiState): void {
   });
   onChange("chip-model", (v) => (opts.model = v));
   onChange("chip-effort", (v) => (opts.effort = v as Effort));
-  onChange("chip-mode", (v) => {
-    opts.mode = v as Mode;
-    refreshChips(state);
-  });
   const send = document.getElementById("send");
   if (send) send.addEventListener("click", () => submit(state));
 }

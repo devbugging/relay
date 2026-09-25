@@ -5,9 +5,7 @@ export type ProviderId = "claude" | "codex";
 
 export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 
-export type Mode = "talk" | "code" | "feature";
-
-export type SessionStatus = "running" | "waiting" | "done" | "failed" | "queued";
+export type SessionStatus = "running" | "waiting" | "done" | "failed";
 
 export interface ProviderInfo {
   id: ProviderId;
@@ -25,7 +23,6 @@ export interface SessionOptions {
   provider: ProviderId;
   model: string;
   effort: Effort;
-  mode: Mode;
 }
 
 export interface PendingApproval {
@@ -45,6 +42,10 @@ export interface Session {
   createdAt: number;
   /** Last time anything happened in this session (message, tool call, status). */
   lastActivityAt: number;
+  /** Finished since the user last opened it. */
+  unread: boolean;
+  /** The user marked it complete. Hidden unless all past sessions are shown. */
+  archived: boolean;
   /** Parent session when this one was forked. */
   parentId?: string;
   /** Message id in the parent this fork started from. */
@@ -52,8 +53,6 @@ export interface Session {
   /** 1-based index of that message in the parent, for display. */
   forkedFromIndex?: number;
   pendingApproval?: PendingApproval;
-  /** Role inside a feature-mode run. */
-  role?: "planner" | "worker" | "reviewer";
   /** Path of the transcript file on disk. */
   transcriptPath: string;
 }
@@ -62,7 +61,7 @@ export type MessageRole = "user" | "assistant";
 
 export interface ToolEvent {
   id: string;
-  kind: "read" | "edit" | "write" | "run" | "spawn" | "finish";
+  kind: "read" | "edit" | "write" | "run";
   label: string;
   target: string;
   detail?: string;
@@ -80,28 +79,8 @@ export interface Message {
   streaming?: boolean;
 }
 
-export interface PlanTask {
-  id: string;
-  index: number;
-  title: string;
-  status: SessionStatus;
-  assignee?: string;
-  note?: string;
-  dependsOn?: string[];
-}
-
-export interface Plan {
-  sessionId: string;
-  path: string;
-  tasks: PlanTask[];
-}
-
-export interface Todo {
-  id: string;
-  text: string;
-  done: boolean;
-  createdAt: number;
-  sourceSessionId?: string;
-}
-
 export type ApprovalDecision = "allow" | "deny" | "always";
+
+export function isActive(s: Session): boolean {
+  return s.status === "running" || s.status === "waiting";
+}

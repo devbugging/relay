@@ -1,7 +1,7 @@
-import type { Message, Session, ToolEvent } from "../api/types";
+import { isActive, type Message, type Session, type ToolEvent } from "../api/types";
 import type { UiState } from "../panel/protocol";
 import { icons } from "./icons";
-import { ago, esc } from "./util";
+import { esc } from "./util";
 import { selected } from "./state";
 
 function toolIcon(kind: ToolEvent["kind"]): string {
@@ -13,10 +13,6 @@ function toolIcon(kind: ToolEvent["kind"]): string {
       return icons.pencil;
     case "run":
       return icons.terminal;
-    case "spawn":
-      return icons.spawn;
-    case "finish":
-      return `<span class="status-done">${icons.check}</span>`;
   }
 }
 
@@ -27,7 +23,7 @@ function tool(t: ToolEvent): string {
       : t.detail
         ? `<span class="right ${t.ok ? "add" : ""}">${esc(t.detail)}</span>`
         : "";
-  return `<div class="tool">${toolIcon(t.kind)}<span>${esc(t.label)}</span><span class="target ${t.kind === "spawn" || t.kind === "finish" ? "" : "mono"} ellipsis">${esc(t.target)}</span>${diff}</div>`;
+  return `<div class="tool">${toolIcon(t.kind)}<span>${esc(t.label)}</span><span class="target mono ellipsis">${esc(t.target)}</span>${diff}</div>`;
 }
 
 function message(m: Message, session: Session): string {
@@ -41,7 +37,6 @@ function message(m: Message, session: Session): string {
     : `<div class="msg-tools">
          <button class="icon-btn" data-action="forkAt" data-id="${esc(session.id)}" data-mid="${esc(m.id)}" title="Fork from here" aria-label="Fork from this message">${icons.fork}</button>
          <button class="icon-btn" data-action="copy" data-mid="${esc(m.id)}" title="Copy" aria-label="Copy message">${icons.copy}</button>
-         <button class="icon-btn" data-action="todoFrom" data-id="${esc(session.id)}" data-mid="${esc(m.id)}" title="Add as todo" aria-label="Add as todo">${icons.todo}</button>
        </div>`;
   return `<div class="msg msg-assistant" data-mid="${esc(m.id)}">${toolbar}${tools}${text}</div>`;
 }
@@ -59,12 +54,10 @@ function approval(s: Session): string {
   </div>`;
 }
 
-function head(state: UiState, s: Session | undefined): string {
+function head(s: Session | undefined): string {
   if (!s) {
-    return `<div class="chat-head"><span class="title grow">No session selected</span></div>`;
+    return `<div class="chat-head"><span class="title grow">New session</span></div>`;
   }
-  const p = state.providers.find((x) => x.id === s.options.provider);
-  const m = p && p.models.find((x) => x.id === s.options.model);
   const status =
     s.status === "running"
       ? `<span class="status status-running"></span>`
@@ -73,17 +66,17 @@ function head(state: UiState, s: Session | undefined): string {
         : s.status === "failed"
           ? `<span class="status status-failed">${icons.cross}</span>`
           : `<span class="status status-done">${icons.check}</span>`;
-  const sub =
-    state.layout === "wide"
-      ? `<span class="muted ellipsis">· ${esc(p ? p.label : s.options.provider)} · ${esc(m ? m.label : s.options.model)} · ${esc(s.options.effort)} · ${esc(s.options.mode)} mode · started ${esc(ago(s.createdAt, state.now))}</span>`
-      : "";
-  const canStop = s.status === "running" || s.status === "waiting";
+  const complete = isActive(s)
+    ? ""
+    : s.archived
+      ? `<span class="muted">Completed</span>`
+      : `<button class="btn btn-complete" data-action="complete" data-id="${esc(s.id)}" title="Mark complete and hide from the list">${icons.check} Complete</button>`;
   return `<div class="chat-head">
     ${status}
-    <span class="title ellipsis">${esc(s.title)}</span>${sub}<span class="grow"></span>
+    <span class="title ellipsis">${esc(s.title)}</span><span class="grow"></span>
     <button class="icon-btn" data-action="fork" data-id="${esc(s.id)}" title="Fork session" aria-label="Fork session">${icons.fork}</button>
-    <button class="icon-btn" data-action="openTranscript" data-id="${esc(s.id)}" title="Open transcript file" aria-label="Open transcript file">${icons.file}</button>
-    ${canStop ? `<button class="icon-btn" data-action="stop" data-id="${esc(s.id)}" title="Stop" aria-label="Stop session">${icons.stop}</button>` : ""}
+    ${isActive(s) ? `<button class="icon-btn" data-action="stop" data-id="${esc(s.id)}" title="Stop" aria-label="Stop session">${icons.stop}</button>` : ""}
+    ${complete}
   </div>`;
 }
 
@@ -94,5 +87,5 @@ export function renderChat(state: UiState): string {
     : state.messages.length === 0
       ? `<div class="empty">Empty session. Say what you want done.</div>`
       : `<div class="messages-inner">${state.messages.map((m) => message(m, s)).join("")}${approval(s)}</div>`;
-  return `<div class="chat">${head(state, s)}<div class="messages" id="messages">${body}</div></div>`;
+  return `<div class="chat">${head(s)}<div class="messages" id="messages">${body}</div></div>`;
 }

@@ -11,22 +11,28 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly api: SessionsApi,
-    private readonly onOpenWide: () => void,
   ) {}
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
     view.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist")] };
-    view.webview.html = buildHtml(view.webview, this.extensionUri, "sidebar");
-    this.host = new PanelHost(view.webview, this.api, "sidebar", this.onOpenWide);
+    view.webview.html = buildHtml(view.webview, this.extensionUri);
+    const host = new PanelHost(view.webview, this.api, () => view.visible);
+    this.host = host;
+    // A session that finished while hidden is marked seen once the view shows again.
+    const visibility = view.onDidChangeVisibility(() => {
+      if (view.visible) host.refresh();
+    });
     view.onDidDispose(() => {
-      if (this.host) this.host.dispose();
+      visibility.dispose();
+      host.dispose();
       this.host = undefined;
       this.view = undefined;
     });
   }
 
-  reveal(): void {
+  startNew(): void {
     if (this.view) this.view.show(true);
+    if (this.host) this.host.startNew();
   }
 }

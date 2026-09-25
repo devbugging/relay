@@ -1,5 +1,4 @@
 import * as vscode from "vscode";
-import type { Layout } from "./protocol";
 
 function nonce(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -8,7 +7,7 @@ function nonce(): string {
   return out;
 }
 
-export function buildHtml(webview: vscode.Webview, extensionUri: vscode.Uri, layout: Layout): string {
+export function buildHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
   const script = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "dist", "webview.js"));
   const style = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "dist", "webview.css"));
   const n = nonce();
@@ -21,8 +20,8 @@ export function buildHtml(webview: vscode.Webview, extensionUri: vscode.Uri, lay
   <link rel="stylesheet" href="${style}">
   <title>AI Sessions</title>
 </head>
-<body data-layout="${layout}">
-  <div id="app" class="app app-${layout}"></div>
+<body>
+  <div id="app" class="app"></div>
   <script nonce="${n}" src="${script}"></script>
 </body>
 </html>`;

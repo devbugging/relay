@@ -1,12 +1,4 @@
-import type {
-  ApprovalDecision,
-  Message,
-  Plan,
-  ProviderInfo,
-  Session,
-  SessionOptions,
-  Todo,
-} from "./types";
+import type { ApprovalDecision, Message, ProviderInfo, Session, SessionOptions } from "./types";
 
 export type Unsubscribe = () => void;
 
@@ -20,19 +12,19 @@ export interface SessionsApi {
 
   listSessions(): Promise<Session[]>;
   getMessages(sessionId: string): Promise<Message[]>;
-  getPlan(sessionId: string): Promise<Plan | undefined>;
 
   createSession(options: SessionOptions, cwd: string): Promise<Session>;
+  /** Also brings an archived session (and its ancestors) back. */
   sendMessage(sessionId: string, text: string, options?: Partial<SessionOptions>): Promise<void>;
   forkSession(sessionId: string, fromMessageId?: string): Promise<Session>;
   stopSession(sessionId: string): Promise<void>;
   respondToApproval(sessionId: string, decision: ApprovalDecision): Promise<void>;
   renameSession(sessionId: string, title: string): Promise<void>;
 
-  listTodos(): Promise<Todo[]>;
-  addTodo(text: string, sourceSessionId?: string): Promise<Todo>;
-  toggleTodo(todoId: string): Promise<void>;
-  removeTodo(todoId: string): Promise<void>;
+  /** The user has looked at the finished output. */
+  markSeen(sessionId: string): Promise<void>;
+  /** Marks the session and its finished forks complete. */
+  archiveSession(sessionId: string): Promise<void>;
 
   /** Fires whenever anything above would return something different. */
   onDidChange(listener: () => void): Unsubscribe;

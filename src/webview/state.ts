@@ -11,8 +11,6 @@ export function post(m: FromWebview): void {
 
 /** Local UI state that survives state pushes from the extension host. */
 export const local = {
-  todosOpen: false,
-  addingTodo: false,
   composer: undefined as SessionOptions | undefined,
   composerFor: undefined as string | undefined,
 };
@@ -26,7 +24,7 @@ export function composerOptions(state: UiState): SessionOptions {
   const s = selected(state);
   if (!local.composer || local.composerFor !== state.selectedSessionId) {
     local.composerFor = state.selectedSessionId;
-    local.composer = s ? { ...s.options } : { provider: "claude", model: "claude-opus-5", effort: "high", mode: "code" };
+    local.composer = s ? { ...s.options } : { provider: "claude", model: "claude-opus-5", effort: "high" };
   }
   return local.composer;
 }
