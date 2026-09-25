@@ -39,6 +39,12 @@
         "title": "New Session",
         "category": "AI Sessions",
         "icon": "$(add)"
+      },
+      {
+        "command": "aiSessions.openAsTab",
+        "title": "Open as Editor Tab",
+        "category": "AI Sessions",
+        "icon": "$(open-preview)"
       }
     ],
     "menus": {
@@ -47,6 +53,11 @@
           "command": "aiSessions.newSession",
           "when": "view == aiSessions.sidebar",
           "group": "navigation@1"
+        },
+        {
+          "command": "aiSessions.openAsTab",
+          "when": "view == aiSessions.sidebar",
+          "group": "navigation@2"
         }
       ]
     }

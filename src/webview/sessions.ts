@@ -166,7 +166,14 @@ export function renderSessions(state: UiState): string {
     : "";
   const nothing = !working.length && !review.length && !past.length;
 
+  const head =
+    state.layout === "wide"
+      ? `<div class="section-head"><span>Sessions</span><span class="grow"></span>
+           <button class="btn btn-primary" data-action="newSession">${icons.plus} New</button></div>`
+      : "";
+
   return `<div class="sessions">
+    ${head}
     <div class="sessions-list">
       ${working.length ? group(state, "Working", String(working.length), working) : ""}
       ${review.length ? group(state, "Ready to review", String(review.length), review) : ""}

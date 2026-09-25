@@ -9,15 +9,18 @@ let state: UiState | undefined;
 let shellBuilt = false;
 const app = document.getElementById("app") as HTMLDivElement;
 
-function buildShell(): void {
-  app.innerHTML = `<div id="left"></div><div id="chat" class="chat-wrap"></div>${renderComposer()}`;
+function buildShell(layout: UiState["layout"]): void {
+  app.innerHTML =
+    layout === "wide"
+      ? `<div class="col col-left" id="left"></div><div class="col"><div id="chat"></div>${renderComposer()}</div>`
+      : `<div id="left"></div><div id="chat" class="chat-wrap"></div>${renderComposer()}`;
   bindComposerOnce(() => state);
   shellBuilt = true;
 }
 
 function render(): void {
   if (!state) return;
-  if (!shellBuilt) buildShell();
+  if (!shellBuilt) buildShell(state.layout);
 
   const left = document.getElementById("left");
   const chat = document.getElementById("chat");
@@ -68,6 +71,9 @@ app.addEventListener("click", (e) => {
   switch (action) {
     case "select":
       if (id !== state.selectedSessionId) post({ type: "selectSession", sessionId: id });
+      break;
+    case "newSession":
+      post({ type: "newSession" });
       break;
     case "fork":
       e.stopPropagation();

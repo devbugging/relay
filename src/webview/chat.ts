@@ -1,7 +1,7 @@
 import { isActive, type Message, type Session, type ToolEvent } from "../api/types";
 import type { UiState } from "../panel/protocol";
 import { icons } from "./icons";
-import { esc } from "./util";
+import { ago, esc } from "./util";
 import { selected } from "./state";
 
 function toolIcon(kind: ToolEvent["kind"]): string {
@@ -54,7 +54,7 @@ function approval(s: Session): string {
   </div>`;
 }
 
-function head(s: Session | undefined): string {
+function head(state: UiState, s: Session | undefined): string {
   if (!s) {
     return `<div class="chat-head"><span class="title grow">New session</span></div>`;
   }
@@ -66,6 +66,12 @@ function head(s: Session | undefined): string {
         : s.status === "failed"
           ? `<span class="status status-failed">${icons.cross}</span>`
           : `<span class="status status-done">${icons.check}</span>`;
+  const p = state.providers.find((x) => x.id === s.options.provider);
+  const m = p && p.models.find((x) => x.id === s.options.model);
+  const sub =
+    state.layout === "wide"
+      ? `<span class="muted ellipsis">· ${esc(p ? p.label : s.options.provider)} · ${esc(m ? m.label : s.options.model)} · ${esc(s.options.effort)} · ${esc(s.folder)} · started ${esc(ago(s.createdAt, state.now))}</span>`
+      : "";
   const complete = isActive(s)
     ? ""
     : s.archived
@@ -73,7 +79,7 @@ function head(s: Session | undefined): string {
       : `<button class="btn btn-complete" data-action="complete" data-id="${esc(s.id)}" title="Mark complete and hide from the list">${icons.check} Complete</button>`;
   return `<div class="chat-head">
     ${status}
-    <span class="title ellipsis">${esc(s.title)}</span><span class="grow"></span>
+    <span class="title ellipsis">${esc(s.title)}</span>${sub}<span class="grow"></span>
     <button class="icon-btn" data-action="fork" data-id="${esc(s.id)}" title="Fork session" aria-label="Fork session">${icons.fork}</button>
     ${isActive(s) ? `<button class="icon-btn" data-action="stop" data-id="${esc(s.id)}" title="Stop" aria-label="Stop session">${icons.stop}</button>` : ""}
     ${complete}
@@ -87,5 +93,5 @@ export function renderChat(state: UiState): string {
     : state.messages.length === 0
       ? `<div class="empty">Empty session. Say what you want done.</div>`
       : `<div class="messages-inner">${state.messages.map((m) => message(m, s)).join("")}${approval(s)}</div>`;
-  return `<div class="chat">${head(s)}<div class="messages" id="messages">${body}</div></div>`;
+  return `<div class="chat">${head(state, s)}<div class="messages" id="messages">${body}</div></div>`;
 }

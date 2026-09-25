@@ -3,6 +3,7 @@ import { MockSessionsApi } from "./api/MockSessionsApi";
 import type { SessionsApi } from "./api/SessionsApi";
 import { workspaceCwd } from "./panel/PanelHost";
 import { SidebarViewProvider } from "./panel/SidebarViewProvider";
+import { WidePanel } from "./panel/WidePanel";
 
 export function activate(context: vscode.ExtensionContext): void {
   // Swap this for the real backend once it exists. Nothing else changes.
@@ -15,7 +16,10 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(SidebarViewProvider.viewType, sidebar, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
-    vscode.commands.registerCommand("aiSessions.newSession", () => sidebar.startNew()),
+    vscode.commands.registerCommand("aiSessions.openAsTab", () => WidePanel.show(context.extensionUri, api)),
+    vscode.commands.registerCommand("aiSessions.newSession", () => {
+      if (!WidePanel.startNew()) sidebar.startNew();
+    }),
   );
 }
 

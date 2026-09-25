@@ -1,11 +1,14 @@
 import * as vscode from "vscode";
 import type { SessionsApi } from "../api/SessionsApi";
 import { isActive } from "../api/types";
-import type { FromWebview, ToWebview, UiState } from "./protocol";
+import type { FromWebview, Layout, ToWebview, UiState } from "./protocol";
 
 const PAST_WINDOW_MS = 2 * 60 * 60 * 1000;
 
-/** Glue between the sidebar webview and the SessionsApi. */
+/**
+ * Glue between one webview and the SessionsApi. The sidebar view and the
+ * editor-tab panel each own one of these; the API is shared.
+ */
 export class PanelHost implements vscode.Disposable {
   private selectedSessionId: string | undefined;
   private showAllPast = false;
@@ -15,6 +18,7 @@ export class PanelHost implements vscode.Disposable {
   constructor(
     private readonly webview: vscode.Webview,
     private readonly api: SessionsApi,
+    private readonly layout: Layout,
     private readonly isVisible: () => boolean,
   ) {
     this.disposables.push(webview.onDidReceiveMessage((m: FromWebview) => void this.handle(m)));
@@ -63,6 +67,7 @@ export class PanelHost implements vscode.Disposable {
     }
     const messages = this.selectedSessionId ? await this.api.getMessages(this.selectedSessionId) : [];
     const state: UiState = {
+      layout: this.layout,
       providers,
       sessions,
       selectedSessionId: this.selectedSessionId,
@@ -87,6 +92,9 @@ export class PanelHost implements vscode.Disposable {
       case "selectSession":
         this.selectedSessionId = m.sessionId;
         await this.push();
+        return;
+      case "newSession":
+        this.startNew();
         return;
       case "send": {
         let id = m.sessionId;

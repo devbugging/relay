@@ -61,6 +61,17 @@ textarea, input, select { font: inherit; color: inherit; }
 /* ---------- app shells ---------- */
 
 .app { height: 100%; display: flex; flex-direction: column; }
+.app-wide { display: grid; grid-template-columns: 320px minmax(0, 1fr); grid-template-rows: 100%; }
+
+.col { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.col-left { border-right: 1px solid var(--border); }
+
+.section-head {
+  height: 40px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; padding: 0 14px; border-bottom: 1px solid var(--border);
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg);
+}
+.section-head .btn { display: inline-flex; align-items: center; gap: 4px; text-transform: none; letter-spacing: 0; }
+.section-head .btn svg { width: 11px; height: 11px; }
 
 .icon-btn {
   width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;
@@ -83,7 +94,10 @@ textarea, input, select { font: inherit; color: inherit; }
 
 /* ---------- sessions ---------- */
 
-#left { display: flex; flex-direction: column; min-height: 0; flex-shrink: 0; max-height: 48%; }
+#left { display: flex; flex-direction: column; min-height: 0; }
+.app-sidebar #left { flex-shrink: 0; max-height: 48%; }
+.app-wide #left { flex-grow: 1; }
+.app-wide .sessions { border-bottom: 0; }
 .sessions { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; border-bottom: 1px solid var(--border); }
 .group-head {
   display: flex; align-items: center; gap: 6px; padding: 8px 2px 2px 2px;
@@ -163,10 +177,14 @@ textarea, input, select { font: inherit; color: inherit; }
   border-bottom: 1px solid var(--border); font-size: 11.5px; color: var(--fg-muted);
 }
 .chat-head .title { color: var(--fg-muted); }
+.app-wide .chat-head { height: 40px; padding: 0 12px 0 20px; font-size: 13px; }
+.app-wide .chat-head .title { color: var(--fg-strong); font-weight: 600; flex-shrink: 0; max-width: 50%; }
 .chat-head .status-running { width: 10px; height: 10px; }
 
 .messages { flex-grow: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 14px 14px; }
 .messages-inner { display: flex; flex-direction: column; gap: 14px; }
+.app-wide .messages { padding: 20px 28px; }
+.app-wide .messages-inner, .app-wide .composer-box { max-width: 760px; width: 100%; }
 
 .msg { position: relative; display: flex; flex-direction: column; gap: 6px; }
 .msg-user { align-items: flex-end; }
@@ -208,6 +226,7 @@ textarea, input, select { font: inherit; color: inherit; }
 /* ---------- composer ---------- */
 
 .composer { flex-shrink: 0; padding: 8px 10px 10px 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+.app-wide .composer { padding: 10px 28px 14px 28px; }
 .composer-box { display: flex; flex-direction: column; border: 1px solid var(--border-input); border-radius: 8px; background: var(--bg-raised); }
 .composer-box:focus-within { border-color: var(--focus); }
 .composer textarea { resize: none; border: 0; outline: 0; background: transparent; padding: 10px 12px 4px 12px; color: var(--fg-strong); min-height: 54px; max-height: 200px; }

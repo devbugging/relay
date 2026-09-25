@@ -14,7 +14,9 @@ A **sidebar view** (`AI Sessions` in the activity bar). Sessions are listed in t
 
 **Complete** (top right of the chat, or the check on a card) archives a session and its finished forks. Sending a message to a completed session brings it back. Forks nest under their parent, and the whole tree sits in the group of its most active member.
 
-The chat sits below the list, with a composer that picks provider, model and effort. Typing with no session selected, or the `+` in the view title, starts a new one.
+The chat sits below the list, with a composer that picks provider, model and effort.
+
+An **editor tab** (`AI Sessions: Open as Editor Tab`, or the icon in the view title) shows the same thing in two columns: sessions on the left, the open session on the right. Typing with no session selected, or the `+` in the view title, starts a new one.
 
 **`SessionsApi`** ([src/api/SessionsApi.ts](src/api/SessionsApi.ts)) is the interface the UI is built against. [MockSessionsApi](src/api/MockSessionsApi.ts) seeds sessions in every group, streams replies word by word, and handles fork / stop / approve / complete in memory. The real backend replaces this one class.
 
@@ -31,6 +33,7 @@ src/
     protocol.ts           messages between extension host and webview
     PanelHost.ts          binds one webview to the API, pushes UiState snapshots
     SidebarViewProvider.ts
+    WidePanel.ts          the two-column editor tab
     html.ts               webview HTML with CSP
   webview/
     main.ts               bootstrap, event delegation, re-render on state
