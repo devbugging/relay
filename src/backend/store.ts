@@ -2,6 +2,14 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import type { Message, Session } from "../api/types";
 
+/** One session and its messages, as saved in `<dir>/<session id>.json`. */
+interface SessionFile {
+  version: 1;
+  session: Session;
+  messages: Message[];
+}
+
+/** The earlier single-file format, kept only to import from. */
 interface Snapshot {
   version: 1;
   sessions: Session[];
@@ -9,43 +17,54 @@ interface Snapshot {
 }
 
 /**
- * Sessions and their normalized messages, kept in memory and written to one
- * JSON file (debounced). With no file it is purely in memory, as the mock uses it.
+ * Sessions and their normalized messages, kept in memory and saved as one
+ * JSON file per session in a directory (the project's `.relay/sessions`).
+ * Only sessions whose content changed are rewritten. With no directory it is
+ * purely in memory, as the mock uses it.
  */
 export class SessionStore {
   readonly sessions = new Map<string, Session>();
   readonly messages = new Map<string, Message[]>();
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
+  /** What each file last held, so unchanged sessions aren't rewritten. */
+  private written = new Map<string, string>();
 
-  constructor(private readonly file?: string) {}
+  constructor(private readonly dir?: string) {}
 
-  /**
-   * Reads saved sessions. `from` and `keep` let a new store take over the
-   * matching sessions of another file (used once to move old global sessions
-   * into their project); those are saved to this store's own file.
-   */
-  async load(from = this.file, keep: (s: Session) => boolean = () => true): Promise<void> {
-    if (!from) return;
-    let raw: string;
+  async load(): Promise<void> {
+    if (!this.dir) return;
+    let names: string[];
     try {
-      raw = await fs.readFile(from, "utf8");
+      names = await fs.readdir(this.dir);
     } catch {
       return;
     }
-    const snap = JSON.parse(raw) as Snapshot;
-    for (const s of snap.sessions.filter(keep)) {
-      // Nothing survives a reload mid-turn: the provider process went with it.
-      if (s.status === "running" || s.status === "waiting") {
-        s.status = "failed";
-        s.unread = true;
-        s.pendingApproval = undefined;
+    for (const name of names) {
+      if (!name.endsWith(".json")) continue;
+      const raw = await fs.readFile(path.join(this.dir, name), "utf8");
+      let file: SessionFile;
+      try {
+        file = JSON.parse(raw) as SessionFile;
+      } catch {
+        continue; // A half-written or hand-edited file shouldn't take the rest down.
       }
-      this.sessions.set(s.id, s);
-      const msgs = snap.messages[s.id] || [];
-      for (const m of msgs) m.streaming = false;
-      this.messages.set(s.id, msgs);
+      this.written.set(file.session.id, raw);
+      this.add(file.session, file.messages);
     }
-    if (from !== this.file && this.sessions.size) this.save();
+  }
+
+  /** Takes over the matching sessions of an old single-file snapshot, and saves them here. */
+  async importSnapshot(file: string, keep: (s: Session) => boolean = () => true): Promise<number> {
+    let snap: Snapshot;
+    try {
+      snap = JSON.parse(await fs.readFile(file, "utf8")) as Snapshot;
+    } catch {
+      return 0;
+    }
+    const taken = snap.sessions.filter(keep);
+    for (const s of taken) this.add(s, snap.messages[s.id] || []);
+    if (taken.length) this.save();
+    return taken.length;
   }
 
   put(session: Session, messages: Message[] = []): void {
@@ -64,7 +83,7 @@ export class SessionStore {
   }
 
   save(): void {
-    if (!this.file || this.saveTimer) return;
+    if (!this.dir || this.saveTimer) return;
     this.saveTimer = setTimeout(() => {
       this.saveTimer = undefined;
       void this.flush();
@@ -72,11 +91,28 @@ export class SessionStore {
   }
 
   async flush(): Promise<void> {
-    if (!this.file) return;
-    const snap: Snapshot = { version: 1, sessions: [...this.sessions.values()], messages: Object.fromEntries(this.messages) };
-    await fs.mkdir(path.dirname(this.file), { recursive: true });
-    const tmp = `${this.file}.tmp`;
-    await fs.writeFile(tmp, JSON.stringify(snap));
-    await fs.rename(tmp, this.file);
+    if (!this.dir) return;
+    await fs.mkdir(this.dir, { recursive: true });
+    for (const session of this.sessions.values()) {
+      const file: SessionFile = { version: 1, session, messages: this.messagesOf(session.id) };
+      const json = JSON.stringify(file, null, 1);
+      if (this.written.get(session.id) === json) continue;
+      const target = path.join(this.dir, `${session.id}.json`);
+      await fs.writeFile(`${target}.tmp`, json);
+      await fs.rename(`${target}.tmp`, target);
+      this.written.set(session.id, json);
+    }
+  }
+
+  private add(s: Session, messages: Message[]): void {
+    // Nothing survives a reload mid-turn: the provider process went with it.
+    if (s.status === "running" || s.status === "waiting") {
+      s.status = "failed";
+      s.unread = true;
+      s.pendingApproval = undefined;
+    }
+    for (const m of messages) m.streaming = false;
+    this.sessions.set(s.id, s);
+    this.messages.set(s.id, messages);
   }
 }

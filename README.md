@@ -27,7 +27,7 @@ An **editor tab** (`Relay: Open as Editor Tab`, or the icon in the view title) s
 
 Models are never hardcoded: new ones appear once the installed CLI knows them, so keep `claude` (and later `codex`) up to date.
 
-Sessions are per project: they're saved in VS Code's storage for the open workspace, so each project lists only its own sessions (a window with no folder keeps them in memory).
+Sessions are stored in the project itself: one JSON file per session in `.relay/sessions/` of the first workspace folder, so each project lists only its own. Sessions from earlier versions (kept in VS Code's storage) move there the first time a project opens. A window with no folder keeps them in memory only.
 
 Settings: `relay.backend` (`real` or `mock`), `relay.claudePath` (if `claude` isn't on PATH, `~/.local/bin`, or Homebrew).
 

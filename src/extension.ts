@@ -19,24 +19,34 @@ function setting(key: string): string | undefined {
 }
 
 /**
- * Sessions belong to the open workspace: they live in its own storage, so each
- * project sees only its sessions and two windows never write the same file.
- * With no folder open they are kept in memory only.
+ * Sessions live in the project itself, one JSON file each in `.relay/sessions/`
+ * of the first workspace folder, so each project sees only its own. With no
+ * folder open they are kept in memory only.
  */
 async function createStore(context: vscode.ExtensionContext): Promise<SessionStore> {
-  if (!context.storageUri) return new SessionStore();
-  const store = new SessionStore(vscode.Uri.joinPath(context.storageUri, "sessions.json").fsPath);
+  const folders = (vscode.workspace.workspaceFolders || []).map((f) => f.uri.fsPath);
+  if (!folders.length) return new SessionStore();
+  const store = new SessionStore(path.join(folders[0], ".relay", "sessions"));
   await store.load();
-  // Relay was called AI Sessions, so its old files sit under the previous extension id.
-  const previous = (dir: vscode.Uri) => path.join(path.dirname(dir.fsPath), OLD_EXTENSION_ID, "sessions.json");
-  if (store.sessions.size === 0) await store.load(previous(context.storageUri));
-  if (store.sessions.size === 0) {
-    // Sessions used to share one global file; bring over the ones that ran in this workspace.
-    const folders = (vscode.workspace.workspaceFolders || []).map((f) => f.uri.fsPath);
-    const inWorkspace = (s: Session) => folders.some((f) => s.cwd === f || s.cwd.startsWith(f + path.sep));
-    await store.load(previous(context.globalStorageUri), inWorkspace);
-  }
+  if (store.sessions.size === 0) await importEarlierSessions(context, store, folders);
   return store;
+}
+
+/**
+ * Sessions used to be kept in VS Code's storage, per workspace or in one global
+ * file, under this extension's id or the old AI Sessions one. The first time a
+ * project opens, its sessions from the first of those that has any move here.
+ */
+async function importEarlierSessions(context: vscode.ExtensionContext, store: SessionStore, folders: string[]): Promise<void> {
+  const inWorkspace = (s: Session) => folders.some((f) => s.cwd === f || s.cwd.startsWith(f + path.sep));
+  const files: string[] = [];
+  for (const base of [context.storageUri, context.globalStorageUri]) {
+    if (!base) continue;
+    files.push(path.join(base.fsPath, "sessions.json"), path.join(path.dirname(base.fsPath), OLD_EXTENSION_ID, "sessions.json"));
+  }
+  for (const file of files) {
+    if (await store.importSnapshot(file, inWorkspace)) return;
+  }
 }
 
 async function createApi(context: vscode.ExtensionContext): Promise<SessionsApi> {
