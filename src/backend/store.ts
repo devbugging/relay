@@ -2,6 +2,15 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import type { Message, Session } from "../api/types";
 
+async function exists(p: string): Promise<boolean> {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** One session and its messages, as saved in `<dir>/<session id>.json`. */
 interface SessionFile {
   version: 1;
@@ -29,7 +38,15 @@ export class SessionStore {
   /** What each file last held, so unchanged sessions aren't rewritten. */
   private written = new Map<string, string>();
 
-  constructor(private readonly dir?: string) {}
+  /**
+   * @param dir where the session files live (`<project>/.relay/sessions`)
+   * @param projectRoot the project folder; sessions whose saved folder no longer
+   *   exists (the project was moved or renamed) are pointed back at it
+   */
+  constructor(
+    private readonly dir?: string,
+    private readonly projectRoot?: string,
+  ) {}
 
   async load(): Promise<void> {
     if (!this.dir) return;
@@ -49,6 +66,12 @@ export class SessionStore {
         continue; // A half-written or hand-edited file shouldn't take the rest down.
       }
       this.written.set(file.session.id, raw);
+      if (this.projectRoot && file.session.cwd !== this.projectRoot && !(await exists(file.session.cwd))) {
+        // Claude and Codex resume by id, so only the working folder needs updating.
+        file.session.cwd = this.projectRoot;
+        file.session.folder = path.basename(this.projectRoot);
+        this.save();
+      }
       this.add(file.session, file.messages);
     }
   }

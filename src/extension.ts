@@ -29,7 +29,7 @@ function setting(key: string): string | undefined {
 async function createStore(context: vscode.ExtensionContext): Promise<SessionStore> {
   const folders = (vscode.workspace.workspaceFolders || []).map((f) => f.uri.fsPath);
   if (!folders.length) return new SessionStore();
-  const store = new SessionStore(path.join(folders[0], ".relay", "sessions"));
+  const store = new SessionStore(path.join(folders[0], ".relay", "sessions"), folders[0]);
   await store.load();
   if (store.sessions.size === 0) await importEarlierSessions(context, store, folders);
   return store;
