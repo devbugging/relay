@@ -1,85 +1,144 @@
 # Relay
 
-One VS Code panel for every AI coding session you have going: Claude, Codex, and whatever comes next.
+One VS Code panel for all your AI coding sessions. Run Claude and Codex side by side, see which sessions need you, and keep an eye on your plan limits without leaving the editor.
 
-Status: **Claude and Codex sessions are real**, through the installed `claude` and `codex` CLIs. Set `relay.backend` to `mock` to work on the UI with seeded fake sessions.
+![Relay in an editor tab: plan usage and sessions on the left, a running Claude session on the right](img/whole%20extension.png)
 
-## What's here
+Relay drives the `claude` and `codex` CLIs you already have installed, so your logins, settings, `CLAUDE.md` files and permission rules all apply.
 
-A **sidebar view** (`Relay` in the activity bar). Sessions are listed in three groups:
+## Features
 
-- **Working**: running (spinner) or waiting for approval (amber, with Allow / Deny on the card).
-- **Ready to review**: finished since you last opened them, marked with a dot. Opening one moves it to Past.
-- **Past**: opened, not completed, active in the last 2 hours. "Show all past sessions" also lists older and completed ones.
+### Claude and Codex in one place
 
-**Getting your attention.** When a session you aren't looking at finishes, fails or stops for an approval, Relay shows a VS Code notification with an Open button, and a macOS notification with a sound if VS Code isn't the focused app. The Relay icon in the activity bar carries a count of sessions to review or approve. `relay.notifications`: `all` (default), `inApp`, or `off`.
+Pick the provider, model and effort for each message from the composer. The model list comes live from each CLI (Claude Code's `/model` catalogue and Codex's `model/list`), so new models and effort levels appear as soon as your CLI knows about them. Nothing is hardcoded. Hover a model to see its description and exact id.
 
-**Usage** sits at the top of the list: every plan window each provider reports (Claude: 5h session, weekly all models, weekly per model such as Sonnet or Fable, extra usage; Codex: 5h and weekly limits, credits), with percent used and time to reset. It starts expanded in the editor tab and collapsed to one line in the sidebar. The chat header shows how full the open session's context window is.
+### Sessions sorted by what needs you
 
-**Complete** (top right of the chat, or the check on a card) archives a session and its finished forks. Sending a message to a completed session brings it back. Forks nest under their parent, and the whole tree sits in the group of its most active member.
+![The sidebar: usage at the top, then sessions grouped by state](img/sidebar%20ui.png)
 
-The chat sits below the list, with a composer that picks provider, model and effort. **↵** sends; while the session is working it queues instead, and queued messages go out in order as each turn ends (shown above the composer, with send-now and remove). **⇧↵** interrupts the running turn and sends immediately. **⌥↵** is a new line. Your latest message stays pinned at the top of the chat while the reply scrolls under it.
+- **Working**: running (spinner) or waiting for your approval (amber, with Allow, Deny and "Always for this session" right on the card).
+- **Ready to review**: finished since you last looked, marked with a dot. It stays here while you read it and moves to **Past** when you click away.
+- **Past**: sessions you've seen from the last 2 hours. **Show all past sessions** reveals older and completed ones.
 
-An **editor tab** (`Relay: Open as Editor Tab`, or the icon in the view title) shows the same thing in two columns: sessions on the left, the open session on the right. Typing with no session selected, or the `+` in the view title, starts a new one.
+**Complete** (top right of the chat, or the check on a card) archives a session when you're done with it. Sending it another message brings it back.
 
-**Backends.** [RealSessionsApi](src/backend/RealSessionsApi.ts) holds the session rules (unread, complete, queue, interrupt, forks) and saves sessions to the extension's storage. Each provider is a [ProviderAdapter](src/backend/adapter.ts):
+**Fork** any session, either from its latest message or from any earlier message in the chat. Forks nest under their parent, and a family of sessions moves between groups together. Each session gets a short title, rewritten after every message by a small Codex model, and hovering a card shows the full title.
 
-- [Claude](src/backend/claude.ts): the Agent SDK driving your installed `claude`, so its login, settings, CLAUDE.md and permission rules apply. Runs in `auto` permission mode; anything it wants confirmed shows on the Allow / Deny card. Models and effort levels come from `supportedModels()` (refreshed every 30 minutes and on each new session), plan usage from the SDK's usage request, context from `getContextUsage()`. Forks branch with `resumeSessionAt`.
-- [Codex](src/backend/codex.ts): one long-lived `codex app-server` process (JSON-RPC over stdio), each session a Codex thread. Runs with Codex's Auto preset (on-request approvals, workspace-write sandbox), so it asks only for network access or writes outside the project. Models and effort levels come from `model/list`, plan usage from `account/rateLimits/read` (and its updates), context from `thread/tokenUsage/updated`. Forks use `thread/fork` through the chosen turn.
-- The mock ([MockSessionsApi](src/api/MockSessionsApi.ts)) is the same `RealSessionsApi` with fake adapters, so the UI rules run through the real code path.
+Relay works in the sidebar, or in an editor tab with two columns (**Relay: Open as Editor Tab**, or the icon in the view title).
 
-Models are never hardcoded: new ones appear once the installed CLI knows them, so keep `claude` and `codex` up to date.
+### Plan usage and context
 
-Sessions are stored in the project itself: one JSON file per session in `.relay/sessions/` of the first workspace folder, so each project lists only its own. Sessions from earlier versions (kept in VS Code's storage) move there the first time a project opens. A window with no folder keeps them in memory only.
+The top of the list shows every limit each provider reports, with percent used and time until reset:
 
-Settings: `relay.backend` (`real` or `mock`), `relay.claudePath` / `relay.codexPath` (if the CLI isn't on PATH, `~/.local/bin`, or Homebrew).
+- **Claude:** the 5-hour session, the weekly limit for all models, weekly limits per model (such as Fable or Sonnet), and extra usage.
+- **Codex:** 5-hour and weekly limits, extra metered buckets, credits, and available limit resets.
 
-## Layout of the code
+Bars turn amber at 75% and red at 90%. In the sidebar the panel collapses to one line showing each provider's fullest window. The chat header shows how full the open session's context window is.
+
+### Sending messages
+
+![The composer with a queued message and the stop button](img/input%20with%20queue.png)
+
+| Key | What it does |
+|---|---|
+| **↵** | Send. While the agent is working, the message is **queued** and goes out when the current turn ends. |
+| **⇧↵** | Interrupt the running turn and send right away. |
+| **Esc** | Stop the agent. |
+| **⌥↵** | New line. |
+
+Queued messages wait above the composer, each with **send now** and **remove**. While the agent works, the send button turns into a stop button. The message box grows up to 10 lines before it scrolls.
+
+### Readable replies
+
+- Replies render as markdown: headings, lists, tables, and code blocks with a **Copy** button.
+- **File names are links.** Clicking a path in a reply or a tool row opens the file in the editor, at the line when one is given (`src/app.ts:42`). Only files that actually exist are linked.
+- Each tool call shows as a compact row: files read, commands run with their exit codes, files edited with `+added −removed` line counts.
+- Your latest message stays pinned at the top of the chat while the reply scrolls under it. Click it to expand a long one.
+
+### Approvals
+
+Both agents run in their **auto** mode.
+
+- **Claude** uses its auto permission mode. Whatever its classifier wants a person to confirm appears on the Allow / Deny card.
+- **Codex** uses its Auto preset. It edits files and runs commands inside the project on its own, and asks only for network access or writes outside the project.
+
+### Getting your attention
+
+When a session you aren't looking at finishes, fails, or stops for an approval:
+
+- the Relay icon in the activity bar shows a count of sessions to review or approve,
+- a VS Code notification appears with an **Open** button,
+- and, if VS Code isn't the focused app, a macOS notification plays a sound.
+
+Nothing fires for the session you have open, or between queued turns.
+
+### Long runs
+
+- **Run timer and time limit.** The chat header shows how long the current run has been going. Click the timer to set a limit (e.g. `30m` or `1h30m`); the agent is stopped when it's reached.
+- **Keep awake.** While an agent is working, Relay keeps your Mac from idle-sleeping (the display can still sleep). Toggle it with the cup icon in the chat header.
+
+### Sessions live in your project
+
+Each session is saved as a JSON file in `.relay/sessions/` inside the project, so every project shows only its own sessions and they survive reloads. If you rename or move the project folder, its sessions follow it. The files contain full transcripts, so consider adding `.relay/` to your `.gitignore` unless you want to share them.
+
+## Requirements
+
+- VS Code 1.137 or newer.
+- [Claude Code](https://docs.claude.com/en/docs/claude-code) and/or [Codex](https://github.com/openai/codex) installed and signed in. Relay finds them on your PATH, in `~/.local/bin`, or in Homebrew's folder. Otherwise, set their paths in the settings below.
+- Plan usage needs a subscription sign-in (claude.ai for Claude, ChatGPT for Codex). With an API key, sessions still work but no limits are shown.
+
+## Install
 
 ```
-src/
-  extension.ts            activation, commands, wires API to views
-  api/
-    types.ts              shared domain types (also imported by the webview)
-    SessionsApi.ts        backend interface
-    MockSessionsApi.ts    fake adapters and seeded sessions
-  backend/
-    RealSessionsApi.ts    session rules on top of provider adapters
-    adapter.ts            ProviderAdapter / TurnSink contract
-    claude.ts             Claude Agent SDK adapter
-    codex.ts              Codex app-server adapter
-    store.ts              sessions and messages, saved as JSON
-    binaries.ts           finds CLIs outside the extension host's PATH
-  panel/
-    protocol.ts           messages between extension host and webview
-    PanelHost.ts          binds one webview to the API, pushes UiState snapshots
-    SidebarViewProvider.ts
-    WidePanel.ts          the two-column editor tab
-    html.ts               webview HTML with CSP
-  webview/
-    main.ts               bootstrap, event delegation, re-render on state
-    sessions.ts           Working / Ready to review / Past groups, fork tree
-    chat.ts               messages, tool rows, approval card
-    composer.ts           textarea and option chips (rendered once, chips refreshed)
-    styles.css            themed with VS Code CSS variables
+make install          # once: install dependencies
+make install-extension
 ```
 
-## Run
+This builds `relay.vsix` and installs it into VS Code. Reload any open windows, then click the Relay icon in the activity bar. Run `make install-extension` again after pulling changes.
+
+## Settings
+
+| Setting | Default | |
+|---|---|---|
+| `relay.notifications` | `all` | `all`: VS Code notification plus a macOS one when VS Code isn't focused. `inApp`: VS Code only. `off`: badge only. |
+| `relay.keepAwake` | `true` | Keep the Mac awake while an agent works. |
+| `relay.titleModel` | `gpt-5.6-luna` | Codex model that writes session titles. Without Codex, the title is the message's first line. |
+| `relay.claudePath` | | Path to `claude`, if Relay can't find it. |
+| `relay.codexPath` | | Path to `codex`, if Relay can't find it. |
+| `relay.backend` | `real` | `mock` runs fake providers with sample sessions, for working on the UI. |
+
+## Known limitations
+
+- When an agent asks a multiple-choice question (Claude's `AskUserQuestion`), Relay declines it and the agent asks in plain text instead.
+- Codex file-change approvals list the files but don't show the diff yet.
+- Code blocks aren't syntax-highlighted.
+- Clicking the macOS notification opens Script Editor, not VS Code. Use the in-app **Open** button.
+- Sessions you start in the terminal with `claude` or `codex` aren't listed; only sessions started from Relay are.
+
+## Development
 
 ```
 make install   # once
-make run       # builds, then opens an Extension Development Host on this folder
+make run       # build, then open an Extension Development Host on this folder
 make watch     # rebuild on change; reload the dev host window with ⌘R
+make package   # build relay.vsix without installing it
 ```
 
-## Install into your VS Code
+Set `relay.backend` to `mock` to work on the UI without spending plan usage.
+
+How it fits together:
+
+- **The session rules** (unread, complete, queue, interrupt, forks, time limits) live in [RealSessionsApi](src/backend/RealSessionsApi.ts). Each provider plugs in as a [ProviderAdapter](src/backend/adapter.ts).
+- **[Claude](src/backend/claude.ts)** runs through the Agent SDK on your installed `claude`: one query per turn, resumed by session id.
+- **[Codex](src/backend/codex.ts)** runs through one long-lived `codex app-server` process: each session is a Codex thread, and the adapter talks to it over JSON-RPC on stdio.
+- **The mock** ([MockSessionsApi](src/api/MockSessionsApi.ts)) is the same core with fake adapters.
+- **The UI** is a webview ([src/webview](src/webview)) fed full state snapshots by [PanelHost](src/panel/PanelHost.ts).
 
 ```
-make install-extension   # builds relay.vsix and installs it; reload open windows
+src/
+  extension.ts            activation, commands, notifications, wiring
+  api/                    shared types, the SessionsApi interface, the mock
+  backend/                session rules, Claude and Codex adapters, .relay store
+  panel/                  webview hosts (sidebar, editor tab), protocol, file links, attention
+  webview/                sessions list, chat, composer, markdown, styles
 ```
-
-`make package` only builds `relay.vsix` (about 1.5 MB: the bundle plus the Agent SDK's JavaScript; it uses your installed `claude` and `codex`, so the SDK's own CLI binary is left out). Run `make install-extension` again after changes to update the installed copy.
-
-## Next
-
-- Transcript store on disk in one normalized format, so a session can move between providers.
