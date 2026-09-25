@@ -37,7 +37,7 @@ export function refreshChips(state: UiState): void {
         .join("")}
     </select></span>`;
   const modelSel = `<select class="chip" id="chip-model" aria-label="Model">
-      ${models.map((m) => `<option value="${esc(m.id)}" ${m.id === opts.model ? "selected" : ""}>${esc(m.label)}</option>`).join("")}
+      ${models.map((m) => `<option value="${esc(m.id)}" ${m.id === opts.model ? "selected" : ""} title="${esc(m.description || m.id)}">${esc(m.label)}</option>`).join("")}
     </select>`;
   const effortSel = efforts.length
     ? `<select class="chip" id="chip-effort" aria-label="Effort">

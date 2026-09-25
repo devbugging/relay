@@ -257,7 +257,29 @@ const EFFORTS: Effort[] = ["low", "medium", "high", "xhigh", "max"];
 
 function toModel(m: Sdk.ModelInfo): ModelInfo {
   const efforts = (m.supportedEffortLevels || []).filter((e): e is Effort => EFFORTS.includes(e as Effort));
-  return { id: m.value, label: m.displayName, efforts, defaultEffort: efforts.includes("high") ? "high" : efforts[efforts.length - 1] };
+  const name = versionedName(m);
+  return {
+    id: m.value,
+    label: m.value === "default" ? `Default · ${name}` : name,
+    description: [m.description, m.resolvedModel].filter(Boolean).join("\n"),
+    efforts,
+    defaultEffort: efforts.includes("high") ? "high" : efforts[efforts.length - 1],
+  };
+}
+
+/**
+ * The catalogue's displayName is often just "Opus". Its description starts
+ * with the versioned name ("Opus 5.5 with 1M context · Best for …"), so use
+ * that, else build one from the resolved id ("claude-haiku-4-5-20251001" → "Haiku 4.5").
+ */
+function versionedName(m: Sdk.ModelInfo): string {
+  const head = m.description ? m.description.split(" · ")[0].trim() : "";
+  if (head && /\d/.test(head)) return head;
+  const id = m.resolvedModel || m.value;
+  const match = /^claude-([a-z]+)-([\d-]+?)(?:-\d{8})?(\[1m\])?$/.exec(id);
+  if (!match) return m.displayName;
+  const family = match[1].charAt(0).toUpperCase() + match[1].slice(1);
+  return `${family} ${match[2].replace(/-/g, ".")}${match[3] ? " (1M)" : ""}`;
 }
 
 function toUsage(u: Sdk.SDKControlGetUsageResponse): ProviderUsage {

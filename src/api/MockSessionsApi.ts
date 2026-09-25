@@ -12,9 +12,9 @@ const CATALOGUE: Record<ProviderId, ProviderInfo> = {
     id: "claude",
     label: "Claude",
     models: [
-      { id: "opus", label: "Opus", efforts: ["low", "medium", "high", "xhigh", "max"], defaultEffort: "high" },
-      { id: "sonnet", label: "Sonnet", efforts: ["low", "medium", "high", "xhigh", "max"], defaultEffort: "high" },
-      { id: "haiku", label: "Haiku", efforts: [] },
+      { id: "opus", label: "Opus 5.5", efforts: ["low", "medium", "high", "xhigh", "max"], defaultEffort: "high" },
+      { id: "sonnet", label: "Sonnet 5", efforts: ["low", "medium", "high", "xhigh", "max"], defaultEffort: "high" },
+      { id: "haiku", label: "Haiku 4.5", efforts: [] },
     ],
   },
   codex: {
