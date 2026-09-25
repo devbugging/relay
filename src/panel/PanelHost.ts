@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type { SessionsApi } from "../api/SessionsApi";
-import { isActive } from "../api/types";
+import { isActive, minutesLabel } from "../api/types";
+import { keepAwakeSupported } from "../backend/keepAwake";
 import type { FromWebview, Layout, ToWebview, UiState } from "./protocol";
 
 const PAST_WINDOW_MS = 2 * 60 * 60 * 1000;
@@ -26,6 +27,11 @@ export class PanelHost implements vscode.Disposable {
     this.disposables.push(webview.onDidReceiveMessage((m: FromWebview) => void this.handle(m)));
     const unsubscribe = api.onDidChange(() => this.schedulePush());
     this.disposables.push({ dispose: unsubscribe });
+    this.disposables.push(
+      vscode.workspace.onDidChangeConfiguration((e) => {
+        if (e.affectsConfiguration("aiSessions.keepAwake")) this.schedulePush();
+      }),
+    );
   }
 
   dispose(): void {
@@ -84,6 +90,7 @@ export class PanelHost implements vscode.Disposable {
       messages,
       pastWindowMs: PAST_WINDOW_MS,
       showAllPast: this.showAllPast,
+      keepAwake: keepAwakeSupported ? keepAwakeEnabled() : undefined,
       now: Date.now(),
     };
     await this.post({ type: "state", state });
@@ -146,8 +153,40 @@ export class PanelHost implements vscode.Disposable {
         this.showAllPast = !this.showAllPast;
         await this.push();
         return;
+      case "toggleKeepAwake":
+        await vscode.workspace.getConfiguration("aiSessions").update("keepAwake", !keepAwakeEnabled(), vscode.ConfigurationTarget.Global);
+        return;
+      case "setRunLimit":
+        await this.askRunLimit(m.sessionId);
+        return;
     }
   }
+
+  private async askRunLimit(sessionId: string): Promise<void> {
+    const session = (await this.api.listSessions()).find((s) => s.id === sessionId);
+    if (!session) return;
+    const text = await vscode.window.showInputBox({
+      title: "Time limit",
+      prompt: "Stop the agent once a run has worked this long, e.g. 30m, 1h, 1h30m or 45 (minutes). Leave empty for no limit.",
+      value: session.runLimitMs ? minutesLabel(session.runLimitMs) : "",
+      validateInput: (v) => (v.trim() && !parseDuration(v) ? "Use minutes or hours, e.g. 30m, 1h or 1h30m." : undefined),
+    });
+    if (text === undefined) return;
+    await this.api.setRunLimit(sessionId, text.trim() ? parseDuration(text) : undefined);
+  }
+}
+
+export function keepAwakeEnabled(): boolean {
+  return vscode.workspace.getConfiguration("aiSessions").get<boolean>("keepAwake", true);
+}
+
+/** "45", "30m", "1h", "1.5h", "1h 30m" to milliseconds; undefined when unreadable or zero. */
+export function parseDuration(text: string): number | undefined {
+  const t = text.trim().toLowerCase().replace(/\s+/g, "");
+  const m = /^(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)(?:m|min)?)?$/.exec(t);
+  if (!m || (!m[1] && !m[2])) return undefined;
+  const ms = (parseFloat(m[1] || "0") * 60 + parseFloat(m[2] || "0")) * 60000;
+  return ms > 0 ? Math.round(ms) : undefined;
 }
 
 export function workspaceCwd(): string {

@@ -32,6 +32,8 @@ export interface SessionsApi {
   stopSession(sessionId: string): Promise<void>;
   respondToApproval(sessionId: string, decision: ApprovalDecision): Promise<void>;
   renameSession(sessionId: string, title: string): Promise<void>;
+  /** Max time a run may work before it's stopped; undefined removes the limit. */
+  setRunLimit(sessionId: string, limitMs: number | undefined): Promise<void>;
 
   /** The user has looked at the finished output. */
   markSeen(sessionId: string): Promise<void>;

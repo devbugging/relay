@@ -87,7 +87,7 @@ function providerBadge(state: UiState, s: Session): string {
 }
 
 function timeCell(s: Session, now: number): string {
-  if (s.status === "running") return elapsed(s.createdAt, now);
+  if (s.status === "running") return elapsed(s.runStartedAt || s.createdAt, now);
   if (s.status === "waiting") return "Needs approval";
   return ago(s.lastActivityAt, now);
 }

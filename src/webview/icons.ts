@@ -17,4 +17,7 @@ export const icons = {
   eye: wrap('<path d="M1.5 6s1.8-3 4.5-3 4.5 3 4.5 3-1.8 3-4.5 3S1.5 6 1.5 6z"/><circle cx="6" cy="6" r="1.4"/>', 12),
   pencil: wrap('<path d="M8.5 1.5l2 2L4 10H2V8z"/>', 12),
   terminal: wrap('<path d="M2 3l3 3-3 3M6.5 9H10"/>', 12),
+  coffee: wrap('<path d="M3 6h8v3.5A3.5 3.5 0 017.5 13h-1A3.5 3.5 0 013 9.5z"/><path d="M11 7h.8a1.7 1.7 0 010 3.4H11M6 2.5v1.5M8.5 2.5v1.5"/>'),
+  moon: wrap('<path d="M13 9.6A5.5 5.5 0 116.4 3a4.4 4.4 0 006.6 6.6z"/>'),
+  timer: wrap('<circle cx="8" cy="9" r="5"/><path d="M8 6.5V9l1.6 1.2M6.5 2h3"/>'),
 };

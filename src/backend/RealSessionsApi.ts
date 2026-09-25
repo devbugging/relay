@@ -1,6 +1,7 @@
 import type { SessionsApi, Unsubscribe } from "../api/SessionsApi";
 import {
   isActive,
+  minutesLabel,
   type ApprovalDecision,
   type Delivery,
   type Message,
@@ -15,6 +16,7 @@ import type { SessionStore } from "./store";
 
 const MODELS_REFRESH_MS = 30 * 60 * 1000;
 const USAGE_REFRESH_MS = 5 * 60 * 1000;
+const RUN_LIMIT_CHECK_MS = 1000;
 
 let counter = 0;
 function nextId(prefix: string): string {
@@ -57,6 +59,7 @@ export class RealSessionsApi implements SessionsApi {
     void this.refreshUsage();
     this.timers.push(setInterval(() => void this.refreshProviders(), MODELS_REFRESH_MS));
     this.timers.push(setInterval(() => void this.refreshUsage(), USAGE_REFRESH_MS));
+    this.timers.push(setInterval(() => this.enforceRunLimits(), RUN_LIMIT_CHECK_MS));
   }
 
   // -- reads ---------------------------------------------------------------
@@ -188,6 +191,13 @@ export class RealSessionsApi implements SessionsApi {
     this.emit();
   }
 
+  async setRunLimit(sessionId: string, limitMs: number | undefined): Promise<void> {
+    const session = this.store.sessions.get(sessionId);
+    if (!session) return;
+    session.runLimitMs = limitMs;
+    this.emit();
+  }
+
   async markSeen(sessionId: string): Promise<void> {
     const session = this.store.sessions.get(sessionId);
     if (!session || !session.unread) return;
@@ -224,7 +234,8 @@ export class RealSessionsApi implements SessionsApi {
 
   // -- turns ---------------------------------------------------------------
 
-  private startTurn(session: Session, text: string): void {
+  /** `continuing` is a queued follow-up, which stays part of the same run. */
+  private startTurn(session: Session, text: string, continuing = false): void {
     const list = this.store.messagesOf(session.id);
     if (!list.some((m) => m.role === "user")) session.title = titleFrom(text);
     list.push({ id: nextId("m"), role: "user", text, createdAt: Date.now() });
@@ -234,6 +245,7 @@ export class RealSessionsApi implements SessionsApi {
     session.unread = false;
     session.status = "running";
     session.lastActivityAt = Date.now();
+    if (!continuing) session.runStartedAt = session.lastActivityAt;
     this.emit();
 
     const turn = ++this.turnSeq;
@@ -338,7 +350,7 @@ export class RealSessionsApi implements SessionsApi {
     for (const m of list) m.streaming = false;
     if (error) list.push({ id: nextId("m"), role: "assistant", text: error, createdAt: Date.now() });
     const next = error ? undefined : session.queued.shift();
-    if (next) return this.startTurn(session, next.text);
+    if (next) return this.startTurn(session, next.text, true);
     session.status = error ? "failed" : "done";
     session.unread = true;
     session.lastActivityAt = Date.now();
@@ -361,6 +373,23 @@ export class RealSessionsApi implements SessionsApi {
     if (adapter) await adapter.interrupt(session.id);
     const running = this.running.get(session.id);
     if (running) await running;
+  }
+
+  private enforceRunLimits(): void {
+    const now = Date.now();
+    for (const s of this.store.sessions.values()) {
+      if (isActive(s) && s.runLimitMs && s.runStartedAt && now - s.runStartedAt >= s.runLimitMs) void this.stopAtLimit(s, s.runLimitMs);
+    }
+  }
+
+  /** Like a stop, but flagged unread with a note, since the user likely wasn't watching. */
+  private async stopAtLimit(session: Session, limitMs: number): Promise<void> {
+    await this.interrupt(session);
+    const text = `Stopped: reached the ${minutesLabel(limitMs)} time limit.`;
+    this.store.messagesOf(session.id).push({ id: nextId("m"), role: "assistant", text, createdAt: Date.now() });
+    session.unread = true;
+    session.lastActivityAt = Date.now();
+    this.emit();
   }
 
   // -- catalogue and usage -------------------------------------------------

@@ -81,6 +81,11 @@
           "type": "string",
           "default": "",
           "description": "Path to the claude executable. Empty: look on PATH and the usual install locations."
+        },
+        "aiSessions.keepAwake": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep the computer from idle-sleeping while an agent is working (macOS). The display can still sleep."
         }
       }
     }

@@ -45,6 +45,10 @@ export interface Session {
   /** Short folder name shown on the card. */
   folder: string;
   createdAt: number;
+  /** When the session last started working; queued follow-ups keep the same run going. */
+  runStartedAt?: number;
+  /** Stop the run once it has worked this long. Applies to every run until cleared. */
+  runLimitMs?: number;
   /** Last time anything happened in this session (message, tool call, status). */
   lastActivityAt: number;
   /** Finished since the user last opened it. */
@@ -141,4 +145,12 @@ export type ApprovalDecision = "allow" | "deny" | "always";
 
 export function isActive(s: Session): boolean {
   return s.status === "running" || s.status === "waiting";
+}
+
+/** "45m", "2h", "1h 30m" for a time limit. */
+export function minutesLabel(ms: number): string {
+  const m = Math.round(ms / 60000);
+  const h = Math.floor(m / 60);
+  if (!h) return `${m}m`;
+  return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
 }

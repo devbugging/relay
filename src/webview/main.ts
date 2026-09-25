@@ -5,6 +5,7 @@ import { bindComposerOnce, refreshChips, renderComposer } from "./composer";
 import { renderSessions } from "./sessions";
 import { renderUsage, usageOpen } from "./usage";
 import { local, post } from "./state";
+import { elapsed } from "./util";
 
 let state: UiState | undefined;
 let shellBuilt = false;
@@ -76,6 +77,10 @@ setInterval(() => {
   state.now = Date.now();
   const left = document.getElementById("left");
   if (left) left.innerHTML = renderLeft(state);
+  const now = state.now;
+  document.querySelectorAll<HTMLElement>("#chat [data-since]").forEach((el) => {
+    el.textContent = elapsed(Number(el.dataset.since), now);
+  });
 }, 1000);
 
 function messageText(mid: string): string {
@@ -122,6 +127,12 @@ app.addEventListener("click", (e) => {
       break;
     case "toggleAllPast":
       post({ type: "toggleAllPast" });
+      break;
+    case "toggleKeepAwake":
+      post({ type: "toggleKeepAwake" });
+      break;
+    case "setRunLimit":
+      post({ type: "setRunLimit", sessionId: id });
       break;
     case "removeQueued":
       post({ type: "removeQueued", sessionId: id, queuedId: target.dataset.qid || "" });

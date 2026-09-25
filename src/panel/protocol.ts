@@ -14,6 +14,8 @@ export interface UiState {
   pastWindowMs: number;
   /** Also list older and completed sessions. */
   showAllPast: boolean;
+  /** Keep the computer awake while an agent works; undefined where that isn't supported. */
+  keepAwake?: boolean;
   now: number;
 }
 
@@ -30,4 +32,6 @@ export type FromWebview =
   | { type: "stop"; sessionId: string }
   | { type: "approve"; sessionId: string; decision: ApprovalDecision }
   | { type: "complete"; sessionId: string }
-  | { type: "toggleAllPast" };
+  | { type: "toggleAllPast" }
+  | { type: "toggleKeepAwake" }
+  | { type: "setRunLimit"; sessionId: string };

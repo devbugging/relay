@@ -1,7 +1,7 @@
-import { isActive, type Message, type Session, type ToolEvent } from "../api/types";
+import { isActive, minutesLabel, type Message, type Session, type ToolEvent } from "../api/types";
 import type { UiState } from "../panel/protocol";
 import { icons } from "./icons";
-import { ago, esc, level, tokens } from "./util";
+import { ago, elapsed, esc, level, tokens } from "./util";
 import { local, selected } from "./state";
 
 function toolIcon(kind: ToolEvent["kind"]): string {
@@ -68,9 +68,28 @@ function contextMeter(used: number, limit: number, wide: boolean): string {
     <span class="ctx-value">${esc(text)}</span></span>`;
 }
 
+/** On: the computer stays awake while any agent works. Off: it may sleep. */
+function keepAwakeToggle(state: UiState): string {
+  if (state.keepAwake === undefined) return "";
+  const on = state.keepAwake;
+  const title = on ? "Keeping the computer awake while agents work. Click to let it sleep." : "The computer may sleep while agents work. Click to keep it awake.";
+  return `<button class="icon-btn ${on ? "on" : ""}" data-action="toggleKeepAwake" title="${title}" aria-label="Keep awake while working" aria-pressed="${on}">${on ? icons.coffee : icons.moon}</button>`;
+}
+
+/** How long the current run has worked, against its limit; clicking sets the limit. */
+function runClock(state: UiState, s: Session): string {
+  const running = isActive(s) && s.runStartedAt !== undefined;
+  const limit = s.runLimitMs ? minutesLabel(s.runLimitMs) : "";
+  const near = running && s.runLimitMs && s.runStartedAt && state.now - s.runStartedAt >= s.runLimitMs * 0.9;
+  const clock = running ? `<span data-since="${s.runStartedAt}">${esc(elapsed(s.runStartedAt || 0, state.now))}</span>` : "";
+  const text = clock && limit ? `${clock}<span class="muted">/ ${esc(limit)}</span>` : clock || esc(limit);
+  const title = limit ? `Time limit: ${limit} per run. Click to change.` : "No time limit. Click to set one.";
+  return `<button class="run-clock ${near ? "near" : ""}" data-action="setRunLimit" data-id="${esc(s.id)}" title="${esc(title)}" aria-label="${esc(title)}">${icons.timer}${text}</button>`;
+}
+
 function head(state: UiState, s: Session | undefined): string {
   if (!s) {
-    return `<div class="chat-head"><span class="title grow">New session</span></div>`;
+    return `<div class="chat-head"><span class="title grow">New session</span>${keepAwakeToggle(state)}</div>`;
   }
   const status =
     s.status === "running"
@@ -96,6 +115,8 @@ function head(state: UiState, s: Session | undefined): string {
     ${status}
     <span class="title ellipsis">${esc(s.title)}</span>${sub}<span class="grow"></span>
     ${ctx}
+    ${runClock(state, s)}
+    ${keepAwakeToggle(state)}
     <button class="icon-btn" data-action="fork" data-id="${esc(s.id)}" title="Fork session" aria-label="Fork session">${icons.fork}</button>
     ${isActive(s) ? `<button class="icon-btn" data-action="stop" data-id="${esc(s.id)}" title="Stop" aria-label="Stop session">${icons.stop}</button>` : ""}
     ${complete}
