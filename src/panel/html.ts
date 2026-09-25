@@ -19,7 +19,7 @@ export function buildHtml(webview: vscode.Webview, extensionUri: vscode.Uri, lay
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; font-src ${webview.cspSource}; img-src ${webview.cspSource} data:; script-src 'nonce-${n}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${style}">
-  <title>AI Sessions</title>
+  <title>Relay</title>
 </head>
 <body data-layout="${layout}">
   <div id="app" class="app app-${layout}"></div>

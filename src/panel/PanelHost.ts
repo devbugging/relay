@@ -29,7 +29,7 @@ export class PanelHost implements vscode.Disposable {
     this.disposables.push({ dispose: unsubscribe });
     this.disposables.push(
       vscode.workspace.onDidChangeConfiguration((e) => {
-        if (e.affectsConfiguration("aiSessions.keepAwake")) this.schedulePush();
+        if (e.affectsConfiguration("relay.keepAwake")) this.schedulePush();
       }),
     );
   }
@@ -154,7 +154,7 @@ export class PanelHost implements vscode.Disposable {
         await this.push();
         return;
       case "toggleKeepAwake":
-        await vscode.workspace.getConfiguration("aiSessions").update("keepAwake", !keepAwakeEnabled(), vscode.ConfigurationTarget.Global);
+        await vscode.workspace.getConfiguration("relay").update("keepAwake", !keepAwakeEnabled(), vscode.ConfigurationTarget.Global);
         return;
       case "setRunLimit":
         await this.askRunLimit(m.sessionId);
@@ -177,7 +177,7 @@ export class PanelHost implements vscode.Disposable {
 }
 
 export function keepAwakeEnabled(): boolean {
-  return vscode.workspace.getConfiguration("aiSessions").get<boolean>("keepAwake", true);
+  return vscode.workspace.getConfiguration("relay").get<boolean>("keepAwake", true);
 }
 
 /** "45", "30m", "1h", "1.5h", "1h 30m" to milliseconds; undefined when unreadable or zero. */

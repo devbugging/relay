@@ -1,12 +1,12 @@
-# AI Sessions
+# Relay
 
 One VS Code panel for every AI coding session you have going: Claude, Codex, and whatever comes next.
 
-Status: **Claude sessions are real** (through the installed `claude` CLI and the Agent SDK). Codex is next. Set `aiSessions.backend` to `mock` to work on the UI with seeded fake sessions.
+Status: **Claude sessions are real** (through the installed `claude` CLI and the Agent SDK). Codex is next. Set `relay.backend` to `mock` to work on the UI with seeded fake sessions.
 
 ## What's here
 
-A **sidebar view** (`AI Sessions` in the activity bar). Sessions are listed in three groups:
+A **sidebar view** (`Relay` in the activity bar). Sessions are listed in three groups:
 
 - **Working**: running (spinner) or waiting for approval (amber, with Allow / Deny on the card).
 - **Ready to review**: finished since you last opened them, marked with a dot. Opening one moves it to Past.
@@ -18,7 +18,7 @@ A **sidebar view** (`AI Sessions` in the activity bar). Sessions are listed in t
 
 The chat sits below the list, with a composer that picks provider, model and effort. **↵** sends; while the session is working it queues instead, and queued messages go out in order as each turn ends (shown above the composer, with send-now and remove). **⇧↵** interrupts the running turn and sends immediately. **⌥↵** is a new line. Your latest message stays pinned at the top of the chat while the reply scrolls under it.
 
-An **editor tab** (`AI Sessions: Open as Editor Tab`, or the icon in the view title) shows the same thing in two columns: sessions on the left, the open session on the right. Typing with no session selected, or the `+` in the view title, starts a new one.
+An **editor tab** (`Relay: Open as Editor Tab`, or the icon in the view title) shows the same thing in two columns: sessions on the left, the open session on the right. Typing with no session selected, or the `+` in the view title, starts a new one.
 
 **Backends.** [RealSessionsApi](src/backend/RealSessionsApi.ts) holds the session rules (unread, complete, queue, interrupt, forks) and saves sessions to the extension's storage. Each provider is a [ProviderAdapter](src/backend/adapter.ts):
 
@@ -29,7 +29,7 @@ Models are never hardcoded: new ones appear once the installed CLI knows them, s
 
 Sessions are per project: they're saved in VS Code's storage for the open workspace, so each project lists only its own sessions (a window with no folder keeps them in memory).
 
-Settings: `aiSessions.backend` (`real` or `mock`), `aiSessions.claudePath` (if `claude` isn't on PATH, `~/.local/bin`, or Homebrew).
+Settings: `relay.backend` (`real` or `mock`), `relay.claudePath` (if `claude` isn't on PATH, `~/.local/bin`, or Homebrew).
 
 ## Layout of the code
 

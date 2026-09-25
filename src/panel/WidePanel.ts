@@ -12,7 +12,7 @@ export class WidePanel {
       WidePanel.current.panel.reveal();
       return;
     }
-    const panel = vscode.window.createWebviewPanel("aiSessions.wide", "AI Sessions", vscode.ViewColumn.One, {
+    const panel = vscode.window.createWebviewPanel("relay.wide", "Relay", vscode.ViewColumn.One, {
       enableScripts: true,
       retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.joinPath(extensionUri, "dist")],

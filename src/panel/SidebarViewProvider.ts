@@ -4,7 +4,7 @@ import { buildHtml } from "./html";
 import { PanelHost } from "./PanelHost";
 
 export class SidebarViewProvider implements vscode.WebviewViewProvider {
-  static readonly viewType = "aiSessions.sidebar";
+  static readonly viewType = "relay.sidebar";
   private host: PanelHost | undefined;
   private view: vscode.WebviewView | undefined;
 

@@ -106,7 +106,7 @@ export class ClaudeAdapter implements ProviderAdapter {
 
   private executable(): string {
     const found = findExecutable("claude", this.pathOverride());
-    if (!found) throw new Error("Claude Code isn't installed. Install it, or set aiSessions.claudePath.");
+    if (!found) throw new Error("Claude Code isn't installed. Install it, or set relay.claudePath.");
     return found;
   }
 

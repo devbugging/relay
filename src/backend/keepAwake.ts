@@ -15,7 +15,7 @@ export class KeepAwake {
     if (!on) return this.release();
     // -w: caffeinate exits by itself if the extension host dies without releasing.
     const child = spawn("/usr/bin/caffeinate", ["-i", "-w", String(process.pid)], { stdio: "ignore" });
-    child.on("error", (err) => console.error("AI Sessions: caffeinate failed", err));
+    child.on("error", (err) => console.error("Relay: caffeinate failed", err));
     child.on("exit", () => {
       if (this.child === child) this.child = undefined;
     });

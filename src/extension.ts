@@ -11,8 +11,10 @@ import { keepAwakeEnabled, workspaceCwd } from "./panel/PanelHost";
 import { SidebarViewProvider } from "./panel/SidebarViewProvider";
 import { WidePanel } from "./panel/WidePanel";
 
+const OLD_EXTENSION_ID = "gregorg.ai-sessions";
+
 function setting(key: string): string | undefined {
-  const value = vscode.workspace.getConfiguration("aiSessions").get<string>(key);
+  const value = vscode.workspace.getConfiguration("relay").get<string>(key);
   return value ? value : undefined;
 }
 
@@ -25,11 +27,14 @@ async function createStore(context: vscode.ExtensionContext): Promise<SessionSto
   if (!context.storageUri) return new SessionStore();
   const store = new SessionStore(vscode.Uri.joinPath(context.storageUri, "sessions.json").fsPath);
   await store.load();
+  // Relay was called AI Sessions, so its old files sit under the previous extension id.
+  const previous = (dir: vscode.Uri) => path.join(path.dirname(dir.fsPath), OLD_EXTENSION_ID, "sessions.json");
+  if (store.sessions.size === 0) await store.load(previous(context.storageUri));
   if (store.sessions.size === 0) {
     // Sessions used to share one global file; bring over the ones that ran in this workspace.
     const folders = (vscode.workspace.workspaceFolders || []).map((f) => f.uri.fsPath);
     const inWorkspace = (s: Session) => folders.some((f) => s.cwd === f || s.cwd.startsWith(f + path.sep));
-    await store.load(vscode.Uri.joinPath(context.globalStorageUri, "sessions.json").fsPath, inWorkspace);
+    await store.load(previous(context.globalStorageUri), inWorkspace);
   }
   return store;
 }
@@ -51,13 +56,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.window.registerWebviewViewProvider(SidebarViewProvider.viewType, sidebar, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
-    vscode.commands.registerCommand("aiSessions.openAsTab", () => WidePanel.show(context.extensionUri, api)),
-    vscode.commands.registerCommand("aiSessions.newSession", () => {
+    vscode.commands.registerCommand("relay.openAsTab", () => WidePanel.show(context.extensionUri, api)),
+    vscode.commands.registerCommand("relay.newSession", () => {
       if (!WidePanel.startNew()) sidebar.startNew();
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("aiSessions.backend")) {
-        void vscode.window.showInformationMessage("Reload the window to switch the AI Sessions backend.", "Reload").then((pick) => {
+      if (e.affectsConfiguration("relay.backend")) {
+        void vscode.window.showInformationMessage("Reload the window to switch the Relay backend.", "Reload").then((pick) => {
           if (pick) void vscode.commands.executeCommand("workbench.action.reloadWindow");
         });
       }
@@ -84,7 +89,7 @@ function watchKeepAwake(context: vscode.ExtensionContext, api: SessionsApi): voi
     keepAwake,
     { dispose: unsubscribe },
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("aiSessions.keepAwake")) update();
+      if (e.affectsConfiguration("relay.keepAwake")) update();
     }),
   );
 }

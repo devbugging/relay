@@ -1,6 +1,6 @@
 {
-  "name": "ai-sessions",
-  "displayName": "AI Sessions",
+  "name": "relay",
+  "displayName": "Relay",
   "description": "One panel for every AI coding session: Claude, Codex and friends, with forks.",
   "version": "0.0.1",
   "private": true,
@@ -18,53 +18,53 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "aiSessions",
-          "title": "AI Sessions",
+          "id": "relay",
+          "title": "Relay",
           "icon": "media/activity.svg"
         }
       ]
     },
     "views": {
-      "aiSessions": [
+      "relay": [
         {
           "type": "webview",
-          "id": "aiSessions.sidebar",
+          "id": "relay.sidebar",
           "name": "Sessions"
         }
       ]
     },
     "commands": [
       {
-        "command": "aiSessions.newSession",
+        "command": "relay.newSession",
         "title": "New Session",
-        "category": "AI Sessions",
+        "category": "Relay",
         "icon": "$(add)"
       },
       {
-        "command": "aiSessions.openAsTab",
+        "command": "relay.openAsTab",
         "title": "Open as Editor Tab",
-        "category": "AI Sessions",
+        "category": "Relay",
         "icon": "$(open-preview)"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "aiSessions.newSession",
-          "when": "view == aiSessions.sidebar",
+          "command": "relay.newSession",
+          "when": "view == relay.sidebar",
           "group": "navigation@1"
         },
         {
-          "command": "aiSessions.openAsTab",
-          "when": "view == aiSessions.sidebar",
+          "command": "relay.openAsTab",
+          "when": "view == relay.sidebar",
           "group": "navigation@2"
         }
       ]
     },
     "configuration": {
-      "title": "AI Sessions",
+      "title": "Relay",
       "properties": {
-        "aiSessions.backend": {
+        "relay.backend": {
           "type": "string",
           "enum": [
             "real",
@@ -77,12 +77,12 @@
           ],
           "description": "Where sessions run."
         },
-        "aiSessions.claudePath": {
+        "relay.claudePath": {
           "type": "string",
           "default": "",
           "description": "Path to the claude executable. Empty: look on PATH and the usual install locations."
         },
-        "aiSessions.keepAwake": {
+        "relay.keepAwake": {
           "type": "boolean",
           "default": true,
           "description": "Keep the computer from idle-sleeping while an agent is working (macOS). The display can still sleep."
