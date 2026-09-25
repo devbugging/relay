@@ -82,6 +82,16 @@
           "default": "",
           "description": "Path to the claude executable. Empty: look on PATH and the usual install locations."
         },
+        "relay.codexPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the codex executable. Empty: look on PATH and the usual install locations."
+        },
+        "relay.titleModel": {
+          "type": "string",
+          "default": "gpt-5.6-luna",
+          "description": "Codex model that writes each session's title from your latest message. Without Codex, the title is the message's first line."
+        },
         "relay.keepAwake": {
           "type": "boolean",
           "default": true,

@@ -7,6 +7,7 @@ import { ClaudeAdapter } from "./backend/claude";
 import { KeepAwake } from "./backend/keepAwake";
 import { RealSessionsApi } from "./backend/RealSessionsApi";
 import { SessionStore } from "./backend/store";
+import { codexTitler } from "./backend/titles";
 import { keepAwakeEnabled, workspaceCwd } from "./panel/PanelHost";
 import { SidebarViewProvider } from "./panel/SidebarViewProvider";
 import { WidePanel } from "./panel/WidePanel";
@@ -51,7 +52,8 @@ async function importEarlierSessions(context: vscode.ExtensionContext, store: Se
 
 async function createApi(context: vscode.ExtensionContext): Promise<SessionsApi> {
   if (setting("backend") === "mock") return createMockSessionsApi(workspaceCwd());
-  return new RealSessionsApi(await createStore(context), [new ClaudeAdapter(() => setting("claudePath"))]);
+  const titler = codexTitler(() => setting("codexPath"), () => setting("titleModel") || "gpt-5.6-luna");
+  return new RealSessionsApi(await createStore(context), [new ClaudeAdapter(() => setting("claudePath"))], titler);
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {

@@ -13,6 +13,7 @@ import {
 } from "../api/types";
 import type { ProviderAdapter, TurnSink, TurnTarget } from "./adapter";
 import type { SessionStore } from "./store";
+import type { Titler } from "./titles";
 
 const MODELS_REFRESH_MS = 30 * 60 * 1000;
 const USAGE_REFRESH_MS = 5 * 60 * 1000;
@@ -46,10 +47,13 @@ export class RealSessionsApi implements SessionsApi {
   private running = new Map<string, Promise<void>>();
   private approvals = new Map<string, (d: ApprovalDecision) => void>();
   private timers: Array<ReturnType<typeof setInterval>> = [];
+  /** Latest title request per session; an older answer arriving late is dropped. */
+  private titleRequests = new Map<string, number>();
 
   constructor(
     private readonly store: SessionStore,
     adapters: ProviderAdapter[],
+    private readonly titler?: Titler,
   ) {
     for (const a of adapters) {
       this.adapters.set(a.id, a);
@@ -238,6 +242,7 @@ export class RealSessionsApi implements SessionsApi {
   private startTurn(session: Session, text: string, continuing = false): void {
     const list = this.store.messagesOf(session.id);
     if (!list.some((m) => m.role === "user")) session.title = titleFrom(text);
+    void this.retitle(session, text);
     list.push({ id: nextId("m"), role: "user", text, createdAt: Date.now() });
     for (let s: Session | undefined = session; s; s = s.parentId ? this.store.sessions.get(s.parentId) : undefined) {
       s.archived = false;
@@ -373,6 +378,16 @@ export class RealSessionsApi implements SessionsApi {
     if (adapter) await adapter.interrupt(session.id);
     const running = this.running.get(session.id);
     if (running) await running;
+  }
+
+  /** Retitles the session after its latest message, falling back to the message's first line. */
+  private async retitle(session: Session, text: string): Promise<void> {
+    const request = (this.titleRequests.get(session.id) || 0) + 1;
+    this.titleRequests.set(session.id, request);
+    const title = this.titler ? await this.titler(text, session.title).catch(() => undefined) : undefined;
+    if (this.titleRequests.get(session.id) !== request) return;
+    session.title = title || titleFrom(text);
+    this.emit();
   }
 
   private enforceRunLimits(): void {
