@@ -3,7 +3,11 @@
 
 export type ProviderId = "claude" | "codex";
 
-export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+/**
+ * Reasoning effort as the provider names it ("low" … "max", Codex also has "ultra").
+ * Each model lists its own, so new levels work without a code change.
+ */
+export type Effort = string;
 
 export type SessionStatus = "running" | "waiting" | "done" | "failed";
 

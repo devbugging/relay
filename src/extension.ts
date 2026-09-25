@@ -4,6 +4,7 @@ import { createMockSessionsApi } from "./api/MockSessionsApi";
 import type { SessionsApi } from "./api/SessionsApi";
 import type { Session } from "./api/types";
 import { ClaudeAdapter } from "./backend/claude";
+import { CodexAdapter } from "./backend/codex";
 import { KeepAwake } from "./backend/keepAwake";
 import { RealSessionsApi } from "./backend/RealSessionsApi";
 import { SessionStore } from "./backend/store";
@@ -53,7 +54,7 @@ async function importEarlierSessions(context: vscode.ExtensionContext, store: Se
 async function createApi(context: vscode.ExtensionContext): Promise<SessionsApi> {
   if (setting("backend") === "mock") return createMockSessionsApi(workspaceCwd());
   const titler = codexTitler(() => setting("codexPath"), () => setting("titleModel") || "gpt-5.6-luna");
-  return new RealSessionsApi(await createStore(context), [new ClaudeAdapter(() => setting("claudePath"))], titler);
+  return new RealSessionsApi(await createStore(context), [new ClaudeAdapter(() => setting("claudePath")), new CodexAdapter(() => setting("codexPath"))], titler);
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {

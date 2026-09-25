@@ -116,7 +116,8 @@ export class ClaudeAdapter implements ProviderAdapter {
     const sdk = await loadSdk();
     const models = (await this.load()).models;
     const model = models.find((m) => m.value === target.options.model);
-    const supportsEffort = !!model && !!model.supportedEffortLevels && model.supportedEffortLevels.includes(target.options.effort);
+    // Only send an effort this model lists; the SDK's type is its own set of names.
+    const effort = model && model.supportedEffortLevels ? model.supportedEffortLevels.find((e) => e === target.options.effort) : undefined;
 
     // Streaming input stays open until the result is in, so context usage can still be read.
     let closeInput = () => {};
@@ -136,7 +137,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       options: {
         cwd: target.cwd,
         model: target.options.model,
-        ...(supportsEffort ? { effort: target.options.effort } : {}),
+        ...(effort ? { effort } : {}),
         permissionMode: "auto",
         systemPrompt: { type: "preset", preset: "claude_code" },
         includePartialMessages: true,
@@ -253,10 +254,8 @@ export class ClaudeAdapter implements ProviderAdapter {
 
 // -- mapping ----------------------------------------------------------------
 
-const EFFORTS: Effort[] = ["low", "medium", "high", "xhigh", "max"];
-
 function toModel(m: Sdk.ModelInfo): ModelInfo {
-  const efforts = (m.supportedEffortLevels || []).filter((e): e is Effort => EFFORTS.includes(e as Effort));
+  const efforts: Effort[] = m.supportedEffortLevels ? m.supportedEffortLevels.slice() : [];
   const name = versionedName(m);
   return {
     id: m.value,

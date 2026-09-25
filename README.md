@@ -2,7 +2,7 @@
 
 One VS Code panel for every AI coding session you have going: Claude, Codex, and whatever comes next.
 
-Status: **Claude sessions are real** (through the installed `claude` CLI and the Agent SDK). Codex is next. Set `relay.backend` to `mock` to work on the UI with seeded fake sessions.
+Status: **Claude and Codex sessions are real**, through the installed `claude` and `codex` CLIs. Set `relay.backend` to `mock` to work on the UI with seeded fake sessions.
 
 ## What's here
 
@@ -23,13 +23,14 @@ An **editor tab** (`Relay: Open as Editor Tab`, or the icon in the view title) s
 **Backends.** [RealSessionsApi](src/backend/RealSessionsApi.ts) holds the session rules (unread, complete, queue, interrupt, forks) and saves sessions to the extension's storage. Each provider is a [ProviderAdapter](src/backend/adapter.ts):
 
 - [Claude](src/backend/claude.ts): the Agent SDK driving your installed `claude`, so its login, settings, CLAUDE.md and permission rules apply. Runs in `auto` permission mode; anything it wants confirmed shows on the Allow / Deny card. Models and effort levels come from `supportedModels()` (refreshed every 30 minutes and on each new session), plan usage from the SDK's usage request, context from `getContextUsage()`. Forks branch with `resumeSessionAt`.
+- [Codex](src/backend/codex.ts): one long-lived `codex app-server` process (JSON-RPC over stdio), each session a Codex thread. Runs with Codex's Auto preset (on-request approvals, workspace-write sandbox), so it asks only for network access or writes outside the project. Models and effort levels come from `model/list`, plan usage from `account/rateLimits/read` (and its updates), context from `thread/tokenUsage/updated`. Forks use `thread/fork` through the chosen turn.
 - The mock ([MockSessionsApi](src/api/MockSessionsApi.ts)) is the same `RealSessionsApi` with fake adapters, so the UI rules run through the real code path.
 
-Models are never hardcoded: new ones appear once the installed CLI knows them, so keep `claude` (and later `codex`) up to date.
+Models are never hardcoded: new ones appear once the installed CLI knows them, so keep `claude` and `codex` up to date.
 
 Sessions are stored in the project itself: one JSON file per session in `.relay/sessions/` of the first workspace folder, so each project lists only its own. Sessions from earlier versions (kept in VS Code's storage) move there the first time a project opens. A window with no folder keeps them in memory only.
 
-Settings: `relay.backend` (`real` or `mock`), `relay.claudePath` (if `claude` isn't on PATH, `~/.local/bin`, or Homebrew).
+Settings: `relay.backend` (`real` or `mock`), `relay.claudePath` / `relay.codexPath` (if the CLI isn't on PATH, `~/.local/bin`, or Homebrew).
 
 ## Layout of the code
 
@@ -44,6 +45,7 @@ src/
     RealSessionsApi.ts    session rules on top of provider adapters
     adapter.ts            ProviderAdapter / TurnSink contract
     claude.ts             Claude Agent SDK adapter
+    codex.ts              Codex app-server adapter
     store.ts              sessions and messages, saved as JSON
     binaries.ts           finds CLIs outside the extension host's PATH
   panel/
@@ -70,6 +72,4 @@ make watch     # rebuild on change; reload the dev host window with ⌘R
 
 ## Next
 
-- Codex adapter over `codex app-server` (auto preset: on-request approvals, workspace-write sandbox).
-- Codex usage and context: `account/rateLimits/read` / `account/rateLimits/updated`, `thread/tokenUsage/updated`.
 - Transcript store on disk in one normalized format, so a session can move between providers.
