@@ -347,3 +347,5 @@ body.vscode-light { --user-bg: color-mix(in srgb, var(--bg) 94%, #000); }
 .send:hover { filter: brightness(1.1); }
 .send svg { width: 14px; height: 14px; }
 .send:disabled { opacity: 0.5; cursor: default; }
+.send.stop { background: var(--bg-hover); color: var(--fg-strong); border: 1px solid var(--border-input); }
+.send.stop svg { width: 12px; height: 12px; }

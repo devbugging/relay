@@ -45,9 +45,14 @@ export function refreshChips(state: UiState): void {
     </select>`
     : "";
 
+  // While the session works the button stops it; ↵ still queues a message.
+  const working = selected(state);
+  const action = working && isActive(working)
+    ? `<button class="send stop" id="send" title="Stop (Esc)" aria-label="Stop the agent">${icons.stop}</button>`
+    : `<button class="send" id="send" title="Send (↵)" aria-label="Send">${icons.send}</button>`;
   el.innerHTML = `${providerSel}${modelSel}${effortSel}<span class="grow"></span>
     <button class="icon-btn" title="Attach" aria-label="Attach file">${icons.attach}</button>
-    <button class="send" id="send" title="Send (↵)" aria-label="Send">${icons.send}</button>`;
+    ${action}`;
 
   const onChange = (id: string, fn: (v: string) => void) => {
     const s = document.getElementById(id) as HTMLSelectElement | null;
@@ -66,7 +71,7 @@ export function refreshChips(state: UiState): void {
   });
   onChange("chip-effort", (v) => (opts.effort = v as Effort));
   const send = document.getElementById("send");
-  if (send) send.addEventListener("click", () => submit(state));
+  if (send) send.addEventListener("click", () => (working && isActive(working) ? stop(working.id) : submit(state)));
 }
 
 /** Switches model and keeps the effort if the new model accepts it, else its default. */
@@ -78,7 +83,7 @@ function pickModel(opts: { model: string; effort: Effort }, m: ModelInfo): void 
 function placeholder(state: UiState): string {
   const s = selected(state);
   if (!s) return "Start a new session…  ↵ send · ⌥↵ new line";
-  if (isActive(s)) return "Queue a message…  ↵ queue · ⇧↵ interrupt and send";
+  if (isActive(s)) return "Queue a message…  ↵ queue · ⇧↵ interrupt and send · esc stop";
   return "Message this session…  ↵ send · ⌥↵ new line";
 }
 
@@ -92,12 +97,26 @@ export function submit(state: UiState, delivery: Delivery = "queue"): void {
   local.composerFor = undefined;
 }
 
+function stop(sessionId: string): void {
+  post({ type: "stop", sessionId });
+}
+
 export function bindComposerOnce(getState: () => UiState | undefined): void {
   const input = document.getElementById("input") as HTMLTextAreaElement | null;
   if (!input) return;
-  // ↵ sends (queued while the session works), ⇧↵ interrupts and sends, ⌥↵ is a new line.
+  // ↵ sends (queued while the session works), ⇧↵ interrupts and sends, ⌥↵ is a new line, esc stops.
   input.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter" || e.isComposing) return;
+    if (e.isComposing) return;
+    if (e.key === "Escape") {
+      const s = getState();
+      const current = s && selected(s);
+      if (current && isActive(current)) {
+        e.preventDefault();
+        stop(current.id);
+      }
+      return;
+    }
+    if (e.key !== "Enter") return;
     e.preventDefault();
     if (e.altKey) {
       input.setRangeText("\n", input.selectionStart, input.selectionEnd, "end");
