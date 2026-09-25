@@ -26,11 +26,14 @@ function tool(t: ToolEvent): string {
       : t.detail
         ? `<span class="right ${t.ok ? "add" : ""}">${esc(t.detail)}</span>`
         : "";
-  return `<div class="tool">${toolIcon(t.kind)}<span>${esc(t.label)}</span><span class="target mono ellipsis">${esc(t.target)}</span>${diff}</div>`;
+  const target = t.path
+    ? `<a class="target mono ellipsis file-link" data-action="openFile" data-path="${esc(t.path)}" title="Open ${esc(t.target)}">${esc(t.target)}</a>`
+    : `<span class="target mono ellipsis">${esc(t.target)}</span>`;
+  return `<div class="tool">${toolIcon(t.kind)}<span>${esc(t.label)}</span>${target}${diff}</div>`;
 }
 
 /** The latest user message is pinned so the reply below it keeps its question in view while scrolling. */
-function message(m: Message, session: Session, pinned: boolean): string {
+function message(m: Message, session: Session, pinned: boolean, links: Set<string>): string {
   if (m.role === "user") {
     const cls = pinned ? `msg-pinned ${local.expandedPin === m.id ? "expanded" : ""}` : "";
     const toggle = pinned ? ` data-action="togglePin" data-mid="${esc(m.id)}"` : "";
@@ -38,7 +41,7 @@ function message(m: Message, session: Session, pinned: boolean): string {
   }
   const tools = m.tools && m.tools.length ? `<div class="tools">${m.tools.map(tool).join("")}</div>` : "";
   const caret = m.streaming ? `<span class="caret"></span>` : "";
-  const text = m.text ? `<div class="msg-text md">${renderMarkdown(m.text)}${caret}</div>` : m.streaming ? `<div class="msg-text">${caret}</div>` : "";
+  const text = m.text ? `<div class="msg-text md">${renderMarkdown(m.text, links)}${caret}</div>` : m.streaming ? `<div class="msg-text">${caret}</div>` : "";
   const toolbar = m.streaming
     ? ""
     : `<div class="msg-tools">
@@ -146,10 +149,11 @@ function queued(s: Session): string {
 export function renderChat(state: UiState): string {
   const s = selected(state);
   const lastUser = state.messages.map((m) => m.role).lastIndexOf("user");
+  const links = new Set(state.linkable);
   const body = !s
     ? `<div class="empty">Pick a session above, or type below to start a new one.</div>`
     : state.messages.length === 0
       ? `<div class="empty">Empty session. Say what you want done.</div>`
-      : `<div class="messages-inner">${state.messages.map((m, i) => message(m, s, i === lastUser)).join("")}${approval(s)}</div>`;
+      : `<div class="messages-inner">${state.messages.map((m, i) => message(m, s, i === lastUser, links)).join("")}${approval(s)}</div>`;
   return `<div class="chat">${head(state, s)}<div class="messages" id="messages">${body}</div>${s ? queued(s) : ""}</div>`;
 }

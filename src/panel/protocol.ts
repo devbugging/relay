@@ -10,6 +10,8 @@ export interface UiState {
   sessions: Session[];
   selectedSessionId?: string;
   messages: Message[];
+  /** Path-like strings in the open session's messages that exist on disk, so they render as file links. */
+  linkable: string[];
   /** Past sessions active within this window are listed without expanding. */
   pastWindowMs: number;
   /** Also list older and completed sessions. */
@@ -34,4 +36,5 @@ export type FromWebview =
   | { type: "complete"; sessionId: string }
   | { type: "toggleAllPast" }
   | { type: "toggleKeepAwake" }
-  | { type: "setRunLimit"; sessionId: string };
+  | { type: "setRunLimit"; sessionId: string }
+  | { type: "openFile"; sessionId: string; path: string; line?: number };

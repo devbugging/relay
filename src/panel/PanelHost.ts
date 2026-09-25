@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { SessionsApi } from "../api/SessionsApi";
 import { isActive, minutesLabel } from "../api/types";
 import { keepAwakeSupported } from "../backend/keepAwake";
+import { findLinkable, resolveIn } from "./fileLinks";
 import type { FromWebview, Layout, ToWebview, UiState } from "./protocol";
 
 const PAST_WINDOW_MS = 2 * 60 * 60 * 1000;
@@ -81,6 +82,7 @@ export class PanelHost implements vscode.Disposable {
       this.viewedUnread = selected.id;
     }
     const messages = this.selectedSessionId ? await this.api.getMessages(this.selectedSessionId) : [];
+    const linkable = selected ? findLinkable(messages.map((m) => m.text), selected.cwd) : [];
     const state: UiState = {
       layout: this.layout,
       providers,
@@ -88,6 +90,7 @@ export class PanelHost implements vscode.Disposable {
       sessions,
       selectedSessionId: this.selectedSessionId,
       messages,
+      linkable,
       pastWindowMs: PAST_WINDOW_MS,
       showAllPast: this.showAllPast,
       keepAwake: keepAwakeSupported ? keepAwakeEnabled() : undefined,
@@ -159,7 +162,35 @@ export class PanelHost implements vscode.Disposable {
       case "setRunLimit":
         await this.askRunLimit(m.sessionId);
         return;
+      case "openFile":
+        await this.openFile(m.sessionId, m.path, m.line);
+        return;
     }
+  }
+
+  /** Opens a file the chat mentions: beside the Relay tab, or in the active editor from the sidebar. */
+  private async openFile(sessionId: string, file: string, line?: number): Promise<void> {
+    const session = (await this.api.listSessions()).find((s) => s.id === sessionId);
+    const uri = vscode.Uri.file(resolveIn(session ? session.cwd : workspaceCwd(), file));
+    let stat: vscode.FileStat;
+    try {
+      stat = await vscode.workspace.fs.stat(uri);
+    } catch {
+      void vscode.window.showWarningMessage(`${file} doesn't exist.`);
+      return;
+    }
+    if (stat.type & vscode.FileType.Directory) {
+      await vscode.commands.executeCommand("revealInExplorer", uri);
+      return;
+    }
+    const at = line ? new vscode.Position(line - 1, 0) : undefined;
+    const options: vscode.TextDocumentShowOptions = {
+      preview: true,
+      viewColumn: this.layout === "wide" ? vscode.ViewColumn.Beside : vscode.ViewColumn.Active,
+      selection: at ? new vscode.Range(at, at) : undefined,
+    };
+    // vscode.open picks the right editor, so images and other non-text files open too.
+    await vscode.commands.executeCommand("vscode.open", uri, options);
   }
 
   private async askRunLimit(sessionId: string): Promise<void> {

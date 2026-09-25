@@ -345,13 +345,13 @@ function str(v: unknown, max = 200): string {
 function toolRow(id: string, name: string, input: Record<string, unknown>, cwd: string): ToolEvent {
   switch (name) {
     case "Read":
-      return { id, kind: "read", label: "Read", target: rel(cwd, input.file_path) };
+      return { id, kind: "read", label: "Read", target: rel(cwd, input.file_path), path: str(input.file_path, 4096) };
     case "Edit":
     case "MultiEdit":
     case "NotebookEdit":
-      return { id, kind: "edit", label: "Edited", target: rel(cwd, input.file_path || input.notebook_path) };
+      return { id, kind: "edit", label: "Edited", target: rel(cwd, input.file_path || input.notebook_path), path: str(input.file_path || input.notebook_path, 4096) };
     case "Write":
-      return { id, kind: "write", label: "Wrote", target: rel(cwd, input.file_path) };
+      return { id, kind: "write", label: "Wrote", target: rel(cwd, input.file_path), path: str(input.file_path, 4096) };
     case "Bash":
       return { id, kind: "run", label: "Ran", target: str(input.command) };
     case "Grep":

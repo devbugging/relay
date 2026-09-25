@@ -270,6 +270,11 @@ body.vscode-light { --user-bg: color-mix(in srgb, var(--bg) 94%, #000); }
 .md li > p { margin: 0; }
 .md a { color: var(--link); text-decoration: none; }
 .md a:hover { text-decoration: underline; }
+/* References to files in the project; clicking opens them in the editor. */
+.file-link { color: var(--link); cursor: pointer; text-decoration: none; }
+.file-link:hover { text-decoration: underline; }
+.md .file-link code { color: var(--link); }
+.tool .file-link.target { color: var(--link); }
 .md code { font-family: var(--mono); font-size: 0.92em; padding: 1px 4px; border-radius: 3px; background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.15)); }
 .md blockquote { padding: 2px 0 2px 12px; border-left: 3px solid var(--border-input); color: var(--fg-muted); }
 .md hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }

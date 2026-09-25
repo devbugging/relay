@@ -150,6 +150,12 @@ app.addEventListener("click", (e) => {
     case "copy":
       if (mid) void navigator.clipboard.writeText(messageText(mid));
       break;
+    case "openFile": {
+      e.preventDefault();
+      const line = target.dataset.line ? Number(target.dataset.line) : undefined;
+      if (state.selectedSessionId && target.dataset.path) post({ type: "openFile", sessionId: state.selectedSessionId, path: target.dataset.path, line });
+      break;
+    }
     case "copyCode": {
       const block = target.closest(".code-block");
       const code = block && block.querySelector("code");

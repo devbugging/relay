@@ -127,6 +127,8 @@ export interface ToolEvent {
   kind: "read" | "edit" | "write" | "run" | "other";
   label: string;
   target: string;
+  /** File the tool touched, when it is one; makes the target open that file. */
+  path?: string;
   detail?: string;
   added?: number;
   removed?: number;

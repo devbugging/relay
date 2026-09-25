@@ -1,9 +1,35 @@
-import markdownit from "markdown-it";
+import markdownit, { type StateCore, type Token } from "markdown-it";
 import { esc } from "./util";
 
 // html: false escapes any raw HTML in model output, and markdown-it refuses
 // javascript:/vbscript: links on its own, so the result is safe to inject.
 const md = markdownit({ html: false, linkify: true, breaks: false });
+// Only link URLs that say so (https://…, www.…). Guessing would turn README.md into http://README.md.
+md.linkify.set({ fuzzyLink: false });
+
+/** Path-like strings the extension host found on disk, passed in the render env. */
+function linksOf(env: unknown): Set<string> {
+  const links = env ? (env as { links?: Set<string> }).links : undefined;
+  return links || new Set<string>();
+}
+
+/** "src/a.ts:42", "src/a.ts:42:7", "src/a.ts#L42-L50" → path and line. */
+function parseRef(ref: string): { path: string; line?: string } {
+  const m = /^(.+?)(?::(\d+)(?::\d+)?|#L(\d+)(?:-L?\d+)?)?$/.exec(ref.trim());
+  if (!m) return { path: ref };
+  return { path: m[1], line: m[2] || m[3] };
+}
+
+function fileLinkAttrs(ref: { path: string; line?: string }): Array<[string, string]> {
+  const attrs: Array<[string, string]> = [
+    ["class", "file-link"],
+    ["data-action", "openFile"],
+    ["data-path", ref.path],
+    ["title", `Open ${ref.path}${ref.line ? `:${ref.line}` : ""}`],
+  ];
+  if (ref.line) attrs.push(["data-line", ref.line]);
+  return attrs;
+}
 
 /** Fenced code gets a header with its language and a copy button. */
 md.renderer.rules.fence = (tokens, idx) => {
@@ -15,6 +41,89 @@ md.renderer.rules.fence = (tokens, idx) => {
   </div>`;
 };
 
-export function renderMarkdown(text: string): string {
-  return md.render(text);
+/** `src/a.ts:42` in backticks opens the file when it exists. */
+md.renderer.rules.code_inline = (tokens, idx, _options, env) => {
+  const content = tokens[idx].content;
+  const ref = parseRef(content);
+  if (!linksOf(env).has(ref.path)) return `<code>${esc(content)}</code>`;
+  const attrs = fileLinkAttrs(ref)
+    .map(([k, v]) => `${k}="${esc(v)}"`)
+    .join(" ");
+  return `<a ${attrs}><code>${esc(content)}</code></a>`;
+};
+
+/** [text](src/a.ts#L42): a link without a scheme points into the project, so open it in the editor. */
+md.renderer.rules.link_open = (tokens, idx, options, _env, self) => {
+  const token = tokens[idx];
+  const raw = token.attrGet("href");
+  const href = raw === null ? "" : String(raw);
+  if (href && !/^[a-z][\w+.-]*:/i.test(href) && !href.startsWith("#")) {
+    let decoded = href;
+    try {
+      decoded = decodeURI(href);
+    } catch {
+      // Keep the raw href if it isn't valid percent-encoding.
+    }
+    token.attrs = fileLinkAttrs(parseRef(decoded));
+  }
+  return self.renderToken(tokens, idx, options);
+};
+
+let cachedKey = "";
+let cachedPattern: RegExp | undefined;
+
+/** Matches any known path as a whole word, with an optional :line suffix. */
+function pathPattern(links: Set<string>): RegExp {
+  const key = [...links].join("\n");
+  if (key !== cachedKey || !cachedPattern) {
+    const alternatives = [...links]
+      .sort((a, b) => b.length - a.length)
+      .map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join("|");
+    cachedPattern = new RegExp(`(?<![\\w@./-])(${alternatives})(?::(\\d+)(?::\\d+)?)?(?![\\w@/-])`, "g");
+    cachedKey = key;
+  }
+  cachedPattern.lastIndex = 0;
+  return cachedPattern;
+}
+
+/** Plain-text mentions of known paths ("Edited src/a.ts") become file links. */
+md.core.ruler.push("file_links", (state: StateCore) => {
+  const links = linksOf(state.env);
+  if (!links.size) return;
+  const pattern = pathPattern(links);
+  const text = (content: string) => {
+    const t = new state.Token("text", "", 0);
+    t.content = content;
+    return t;
+  };
+  for (const block of state.tokens) {
+    if (block.type !== "inline" || !block.children) continue;
+    const out: Token[] = [];
+    let insideLink = 0;
+    for (const tok of block.children) {
+      if (tok.type === "link_open") insideLink++;
+      if (tok.type === "link_close") insideLink--;
+      if (tok.type !== "text" || insideLink) {
+        out.push(tok);
+        continue;
+      }
+      let last = 0;
+      pattern.lastIndex = 0;
+      for (let m = pattern.exec(tok.content); m; m = pattern.exec(tok.content)) {
+        if (m.index > last) out.push(text(tok.content.slice(last, m.index)));
+        const open = new state.Token("link_open", "a", 1);
+        open.attrs = fileLinkAttrs({ path: m[1], line: m[2] });
+        out.push(open, text(m[0]), new state.Token("link_close", "a", -1));
+        last = m.index + m[0].length;
+      }
+      if (last === 0) out.push(tok);
+      else if (last < tok.content.length) out.push(text(tok.content.slice(last)));
+    }
+    block.children = out;
+  }
+});
+
+export function renderMarkdown(text: string, links: Set<string> = new Set()): string {
+  return md.render(text, { links });
 }
