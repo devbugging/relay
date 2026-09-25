@@ -98,9 +98,9 @@ function card(state: UiState, node: Node, depth: number): string {
   const s = node.session;
   const isSel = s.id === state.selectedSessionId;
   const forkNote = s.forkedFromIndex ? `from msg ${s.forkedFromIndex} · ` : "";
-  const where =
-    depth === 0
-      ? `<span class="mono">${esc(s.pendingApproval ? `${s.pendingApproval.kind}: ${s.pendingApproval.detail.split(" ").slice(0, 2).join(" ")}` : s.folder)}</span>`
+  const approvalNote =
+    depth === 0 && s.pendingApproval
+      ? `<span class="mono">${esc(`${s.pendingApproval.kind}: ${s.pendingApproval.detail.split(" ").slice(0, 2).join(" ")}`)}</span>`
       : "";
   const canStop = isActive(s);
   const canComplete = !isActive(s) && !s.archived;
@@ -129,7 +129,7 @@ function card(state: UiState, node: Node, depth: number): string {
     <div class="card-meta">
       ${providerIcon(state, s)}
       <span class="ellipsis grow">${esc(forkNote)}${esc(modelLabel(state, s))} · ${esc(s.options.effort)}</span>
-      ${where}
+      ${approvalNote}
       <span class="card-tools">
         <button class="icon-btn sm" data-action="fork" data-id="${esc(s.id)}" title="Fork session" aria-label="Fork session">${icons.fork}</button>
         ${canStop ? `<button class="icon-btn sm" data-action="stop" data-id="${esc(s.id)}" title="Stop" aria-label="Stop">${icons.stop}</button>` : ""}
