@@ -57,7 +57,8 @@ function statusIcon(s: Session): string {
     case "waiting":
       return `<span class="status status-waiting">${icons.clock}</span>`;
     case "done":
-      return `<span class="status status-done">${icons.check}</span>`;
+      // Finished is the normal state; a check says nothing, so show none.
+      return "";
     case "failed":
       return `<span class="status status-failed">${icons.cross}</span>`;
   }
@@ -118,9 +119,10 @@ function card(state: UiState, node: Node, depth: number): string {
          ${isSel ? `<div class="child"><div class="branch"></div><button class="fork-slot" data-action="fork" data-id="${esc(s.id)}">${icons.plus} Fork from latest message</button></div>` : ""}
        </div>`
     : "";
-  return `<div class="card ${cardClass(s)} ${s.unread ? "unread" : ""} ${isSel ? "selected" : ""}" data-action="select" data-id="${esc(s.id)}">
+  const icon = statusIcon(s);
+  return `<div class="card ${cardClass(s)} ${s.unread ? "unread" : ""} ${isSel ? "selected" : ""} ${icon ? "" : "no-icon"}" data-action="select" data-id="${esc(s.id)}" title="${esc(s.title)}">
     <div class="card-row">
-      ${statusIcon(s)}
+      ${icon}
       <span class="card-title ellipsis grow">${esc(s.title)}</span>
       <span class="card-tools">
         <button class="icon-btn sm" data-action="fork" data-id="${esc(s.id)}" title="Fork session" aria-label="Fork session">${icons.fork}</button>
