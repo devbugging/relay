@@ -21,6 +21,18 @@ export class WidePanel {
     WidePanel.current = new WidePanel(panel, extensionUri, api);
   }
 
+  static isViewing(sessionId: string): boolean {
+    return !!WidePanel.current && WidePanel.current.host.isViewing(sessionId);
+  }
+
+  /** Shows the session in the tab if it's open; false when there is no tab. */
+  static open(sessionId: string): boolean {
+    if (!WidePanel.current) return false;
+    WidePanel.current.panel.reveal();
+    WidePanel.current.host.open(sessionId);
+    return true;
+  }
+
   static startNew(): boolean {
     if (!WidePanel.current || !WidePanel.current.panel.visible) return false;
     WidePanel.current.host.startNew();

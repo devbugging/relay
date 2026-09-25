@@ -12,6 +12,8 @@ A **sidebar view** (`Relay` in the activity bar). Sessions are listed in three g
 - **Ready to review**: finished since you last opened them, marked with a dot. Opening one moves it to Past.
 - **Past**: opened, not completed, active in the last 2 hours. "Show all past sessions" also lists older and completed ones.
 
+**Getting your attention.** When a session you aren't looking at finishes, fails or stops for an approval, Relay shows a VS Code notification with an Open button, and a macOS notification with a sound if VS Code isn't the focused app. The Relay icon in the activity bar carries a count of sessions to review or approve. `relay.notifications`: `all` (default), `inApp`, or `off`.
+
 **Usage** sits at the top of the list: every plan window each provider reports (Claude: 5h session, weekly all models, weekly per model such as Sonnet or Fable, extra usage; Codex: 5h and weekly limits, credits), with percent used and time to reset. It starts expanded in the editor tab and collapsed to one line in the sidebar. The chat header shows how full the open session's context window is.
 
 **Complete** (top right of the chat, or the check on a card) archives a session and its finished forks. Sending a message to a completed session brings it back. Forks nest under their parent, and the whole tree sits in the group of its most active member.

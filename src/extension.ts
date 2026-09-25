@@ -11,6 +11,7 @@ import { SessionStore } from "./backend/store";
 import { codexTitler } from "./backend/titles";
 import { keepAwakeEnabled, workspaceCwd } from "./panel/PanelHost";
 import { SidebarViewProvider } from "./panel/SidebarViewProvider";
+import { Attention, type NotifyLevel } from "./panel/attention";
 import { WidePanel } from "./panel/WidePanel";
 
 const OLD_EXTENSION_ID = "gregorg.ai-sessions";
@@ -65,7 +66,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const sidebar = new SidebarViewProvider(context.extensionUri, api);
 
+  const attention = new Attention(api, {
+    // Selected in a visible panel of the focused window: the user is already looking.
+    isViewing: (id) => vscode.window.state.focused && (sidebar.isViewing(id) || WidePanel.isViewing(id)),
+    open: (id) => {
+      if (!WidePanel.open(id)) void sidebar.open(id);
+    },
+    setBadge: (badge) => sidebar.setBadge(badge),
+    level: () => vscode.workspace.getConfiguration("relay").get<NotifyLevel>("notifications", "all"),
+  });
+
   context.subscriptions.push(
+    attention,
     vscode.window.registerWebviewViewProvider(SidebarViewProvider.viewType, sidebar, {
       webviewOptions: { retainContextWhenHidden: true },
     }),

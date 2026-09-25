@@ -96,6 +96,21 @@
           "type": "boolean",
           "default": true,
           "description": "Keep the computer from idle-sleeping while an agent is working (macOS). The display can still sleep."
+        },
+        "relay.notifications": {
+          "type": "string",
+          "enum": [
+            "all",
+            "inApp",
+            "off"
+          ],
+          "default": "all",
+          "enumDescriptions": [
+            "VS Code notification, plus a macOS notification with a sound when VS Code isn't the focused app.",
+            "VS Code notification only.",
+            "No notifications; the activity bar badge still counts sessions to review."
+          ],
+          "description": "How to get your attention when a session you aren't looking at finishes, fails or needs approval."
         }
       }
     }

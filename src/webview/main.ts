@@ -9,6 +9,12 @@ import { elapsed } from "./util";
 
 let state: UiState | undefined;
 let shellBuilt = false;
+/**
+ * What each pane last rendered. A pane is only replaced when its HTML changes,
+ * so another session streaming doesn't swap out the chat mid-scroll.
+ */
+let leftHtml = "";
+let chatHtml = "";
 const app = document.getElementById("app") as HTMLDivElement;
 
 function buildShell(layout: UiState["layout"]): void {
@@ -20,23 +26,30 @@ function buildShell(layout: UiState["layout"]): void {
   shellBuilt = true;
 }
 
-function renderLeft(s: UiState): string {
-  return `${renderUsage(s)}${renderSessions(s)}`;
+function renderLeft(s: UiState): void {
+  const left = document.getElementById("left");
+  const html = `${renderUsage(s)}${renderSessions(s)}`;
+  if (!left || html === leftHtml) return;
+  left.innerHTML = html;
+  leftHtml = html;
 }
 
 function render(): void {
   if (!state) return;
   if (!shellBuilt) buildShell(state.layout);
 
-  const left = document.getElementById("left");
+  renderLeft(state);
+  refreshChips(state);
+
   const chat = document.getElementById("chat");
+  const html = renderChat(state);
+  if (!chat || html === chatHtml) return;
   const messages = document.getElementById("messages");
   const stickToBottom = !messages || messages.scrollHeight - messages.scrollTop - messages.clientHeight < 40;
   const prevScroll = messages ? messages.scrollTop : 0;
 
-  if (left) left.innerHTML = renderLeft(state);
-  if (chat) chat.outerHTML = `<div id="chat" class="chat-wrap">${renderChat(state)}</div>`;
-  refreshChips(state);
+  chat.outerHTML = `<div id="chat" class="chat-wrap">${html}</div>`;
+  chatHtml = html;
 
   const nextMessages = document.getElementById("messages");
   if (nextMessages) nextMessages.scrollTop = stickToBottom ? nextMessages.scrollHeight : prevScroll;
@@ -75,8 +88,7 @@ setInterval(() => {
   if (!state) return;
   if (!state.sessions.some((s) => s.status === "running")) return;
   state.now = Date.now();
-  const left = document.getElementById("left");
-  if (left) left.innerHTML = renderLeft(state);
+  renderLeft(state);
   const now = state.now;
   document.querySelectorAll<HTMLElement>("#chat [data-since]").forEach((el) => {
     el.textContent = elapsed(Number(el.dataset.since), now);

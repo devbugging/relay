@@ -47,6 +47,17 @@ export class PanelHost implements vscode.Disposable {
     void this.push().then(() => this.post({ type: "focusInput" }));
   }
 
+  /** Shows this session, e.g. from a notification's Open button. */
+  open(sessionId: string): void {
+    this.select(sessionId);
+    void this.push();
+  }
+
+  /** Whether the user can see this session right now in this panel. */
+  isViewing(sessionId: string): boolean {
+    return this.selectedSessionId === sessionId && this.isVisible();
+  }
+
   refresh(): void {
     this.schedulePush();
   }
