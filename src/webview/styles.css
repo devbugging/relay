@@ -170,6 +170,37 @@ textarea, input, select { font: inherit; color: inherit; }
 .older-toggle svg { width: 12px; height: 12px; transition: transform 0.12s; }
 .older-toggle.open svg { transform: rotate(180deg); }
 
+/* ---------- usage ---------- */
+
+.usage { flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; padding: 6px 10px 8px 10px; border-bottom: 1px solid var(--border); }
+.usage-head {
+  display: flex; align-items: center; gap: 6px; min-width: 0; text-align: left;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg);
+}
+.usage-head svg { width: 12px; height: 12px; flex-shrink: 0; transform: rotate(-90deg); transition: transform 0.12s; }
+.usage-head.open svg { transform: none; }
+.usage-sum { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--fg-muted); white-space: nowrap; }
+.usage-sum + .usage-sum::before { content: "·"; margin-right: 6px; }
+.usage-sum-warn { color: var(--wait); }
+.usage-sum-crit { color: var(--fail); }
+.usage-provider { display: flex; flex-direction: column; gap: 3px; }
+.usage-name { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: var(--fg); }
+.usage-name .muted { font-weight: 400; }
+.usage-name .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.usage-row { display: grid; grid-template-columns: minmax(0, 88px) minmax(40px, 1fr) 32px 46px; align-items: center; gap: 8px; padding-left: 13px; font-size: 11px; color: var(--fg-muted); }
+.usage-pct { text-align: right; color: var(--fg); font-variant-numeric: tabular-nums; }
+.usage-reset { text-align: right; font-variant-numeric: tabular-nums; }
+.usage-extra { display: flex; align-items: center; gap: 8px; padding-left: 13px; font-size: 11px; color: var(--fg-muted); min-width: 0; }
+.usage-extra-value { margin-left: auto; flex-shrink: 0; color: var(--fg); font-variant-numeric: tabular-nums; }
+.usage-note { padding-left: 13px; font-size: 11px; color: var(--fg-muted); }
+
+/* Native <progress> so widths need no inline styles (blocked by the CSP). */
+.meter { appearance: none; -webkit-appearance: none; width: 100%; height: 5px; border: 0; border-radius: 3px; overflow: hidden; background: var(--bg-hover); }
+.meter::-webkit-progress-bar { background: var(--bg-hover); border-radius: 3px; }
+.meter::-webkit-progress-value { background: var(--run); border-radius: 3px; }
+.meter-warn::-webkit-progress-value { background: var(--wait); }
+.meter-crit::-webkit-progress-value { background: var(--fail); }
+
 /* ---------- chat ---------- */
 
 .chat-wrap, .chat { flex-grow: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -181,6 +212,10 @@ textarea, input, select { font: inherit; color: inherit; }
 .app-wide .chat-head { height: 40px; padding: 0 12px 0 20px; font-size: 13px; }
 .app-wide .chat-head .title { color: var(--fg-strong); font-weight: 600; flex-shrink: 0; max-width: 50%; }
 .chat-head .status-running { width: 10px; height: 10px; }
+.ctx { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; font-size: 11px; color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+.ctx .meter { width: 36px; }
+.app-sidebar .ctx-label { display: none; }
+.app-wide .ctx .meter { width: 64px; }
 
 .messages { flex-grow: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 14px 14px; }
 .messages-inner { display: flex; flex-direction: column; gap: 14px; }

@@ -11,6 +11,8 @@ export function post(m: FromWebview): void {
 
 /** Local UI state that survives state pushes from the extension host. */
 export const local = {
+  /** Unset until toggled: open in the editor tab, collapsed in the narrow sidebar. */
+  usageOpen: undefined as boolean | undefined,
   composer: undefined as SessionOptions | undefined,
   composerFor: undefined as string | undefined,
 };

@@ -1,5 +1,5 @@
 import type { SessionsApi, Unsubscribe } from "./SessionsApi";
-import { isActive, type ApprovalDecision, type Message, type ProviderInfo, type Session, type SessionOptions, type ToolEvent } from "./types";
+import { isActive, type ApprovalDecision, type Message, type ProviderInfo, type ProviderUsage, type Session, type SessionOptions, type ToolEvent } from "./types";
 
 const MIN = 60_000;
 
@@ -31,6 +31,18 @@ const PROVIDERS: ProviderInfo[] = [
   },
 ];
 
+const CONTEXT_LIMITS: Record<string, number> = {
+  "claude-opus-5": 200_000,
+  "claude-sonnet-5": 200_000,
+  "claude-haiku-4-5": 200_000,
+  "gpt-5.5": 272_000,
+  "gpt-5.5-mini": 272_000,
+};
+
+function contextLimit(model: string): number {
+  return CONTEXT_LIMITS[model] || 200_000;
+}
+
 const STREAM_TEXT =
   "Looking at how sections are declared in the schema. The nested validator needs to walk each section recursively and collect unknown keys with their full path, so the error message points at the exact location.";
 
@@ -42,6 +54,7 @@ const STREAM_TEXT =
 export class MockSessionsApi implements SessionsApi {
   private sessions = new Map<string, Session>();
   private messages = new Map<string, Message[]>();
+  private usage: ProviderUsage[] = [];
   private listeners = new Set<() => void>();
   private timers = new Set<ReturnType<typeof setTimeout>>();
   private disposed = false;
@@ -56,8 +69,12 @@ export class MockSessionsApi implements SessionsApi {
     return PROVIDERS;
   }
 
+  async getUsage(): Promise<ProviderUsage[]> {
+    return this.usage.map((u) => ({ ...u, windows: u.windows.map((w) => ({ ...w })), extras: u.extras ? u.extras.map((x) => ({ ...x })) : undefined }));
+  }
+
   async listSessions(): Promise<Session[]> {
-    return [...this.sessions.values()].map((s) => ({ ...s }));
+    return [...this.sessions.values()].map((s) => ({ ...s, context: s.context ? { ...s.context } : undefined }));
   }
 
   async getMessages(sessionId: string): Promise<Message[]> {
@@ -93,6 +110,7 @@ export class MockSessionsApi implements SessionsApi {
     const list = this.messages.get(sessionId) || [];
     if (options) session.options = { ...session.options, ...options };
     session.unread = false;
+    if (!session.context) session.context = { usedTokens: 14_000, limitTokens: contextLimit(session.options.model) };
     if (list.length === 0) session.title = text.length > 48 ? text.slice(0, 45) + "…" : text;
     list.push({ id: nextId("m"), role: "user", text, createdAt: Date.now() });
     this.messages.set(sessionId, list);
@@ -222,6 +240,13 @@ export class MockSessionsApi implements SessionsApi {
     this.timers.add(t);
   }
 
+  /** Grows the session's context and nudges its provider's plan windows, as a real turn would. */
+  private spend(s: Session, tokens: number): void {
+    if (s.context) s.context.usedTokens = Math.min(s.context.limitTokens, s.context.usedTokens + tokens);
+    const usage = this.usage.find((u) => u.provider === s.options.provider);
+    if (usage) for (const w of usage.windows.filter((x) => x.resetsAt)) w.usedPercent = Math.min(100, w.usedPercent + 0.02);
+  }
+
   /** Appends an assistant message and reveals it a few words at a time. */
   private streamReply(sessionId: string, fullText: string, stepMs = 180): void {
     const session = this.sessions.get(sessionId);
@@ -237,6 +262,7 @@ export class MockSessionsApi implements SessionsApi {
       i += 2;
       msg.text = words.slice(0, i).join(" ");
       s.lastActivityAt = Date.now();
+      this.spend(s, 450);
       if (i >= words.length) {
         msg.text = fullText;
         msg.streaming = false;
@@ -251,6 +277,33 @@ export class MockSessionsApi implements SessionsApi {
 
   private seed(): void {
     const now = Date.now();
+    const HOUR = 60 * MIN;
+    this.usage = [
+      {
+        provider: "claude",
+        plan: "Max",
+        updatedAt: now,
+        windows: [
+          // Claude Code's /usage: current session, current week (all models), per-model weeks, extra usage.
+          { id: "five_hour", label: "Session (5h)", usedPercent: 42, resetsAt: now + 2 * HOUR + 10 * MIN },
+          { id: "seven_day", label: "Week · all models", usedPercent: 18, resetsAt: now + 3 * 24 * HOUR + 5 * HOUR },
+          { id: "seven_day_sonnet", label: "Week · Sonnet", usedPercent: 9, resetsAt: now + 3 * 24 * HOUR + 5 * HOUR },
+          { id: "model_scoped:fable", label: "Week · Fable", usedPercent: 31, resetsAt: now + 3 * 24 * HOUR + 5 * HOUR },
+          { id: "extra_usage", label: "Extra usage", usedPercent: 25, detail: "$12.40 of $50 this month" },
+        ],
+      },
+      {
+        provider: "codex",
+        plan: "Plus",
+        updatedAt: now,
+        windows: [
+          // Codex's /status: primary and secondary windows, labelled by length, plus credits.
+          { id: "primary", label: "5h limit", usedPercent: 12, resetsAt: now + 4 * HOUR + 20 * MIN },
+          { id: "secondary", label: "Weekly limit", usedPercent: 78, resetsAt: now + 4 * 24 * HOUR },
+        ],
+        extras: [{ label: "Credits", value: "140 left" }],
+      },
+    ];
     const cwd = this.cwd;
     const folder = cwd.split("/").pop() || cwd;
     const base = (id: string, provider: Session["options"]["provider"], model: string) => ({
@@ -263,6 +316,8 @@ export class MockSessionsApi implements SessionsApi {
       transcriptPath: `${cwd}/.ai/sessions/${id}.jsonl`,
     });
     const put = (s: Session, msgs: Message[]) => {
+      // Roughly: system prompt and tools, plus a few thousand tokens per turn.
+      s.context = { usedTokens: 14_000 + msgs.length * 9_000 + (s.id.length % 7) * 3_100, limitTokens: contextLimit(s.options.model) };
       this.sessions.set(s.id, s);
       this.messages.set(s.id, msgs);
       return s;

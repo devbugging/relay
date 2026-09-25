@@ -64,7 +64,7 @@ export class PanelHost implements vscode.Disposable {
   }
 
   private async push(): Promise<void> {
-    const [providers, sessions] = await Promise.all([this.api.listProviders(), this.api.listSessions()]);
+    const [providers, usage, sessions] = await Promise.all([this.api.listProviders(), this.api.getUsage(), this.api.listSessions()]);
     if (this.selectedSessionId && !sessions.some((s) => s.id === this.selectedSessionId)) {
       this.selectedSessionId = undefined;
     }
@@ -78,6 +78,7 @@ export class PanelHost implements vscode.Disposable {
     const state: UiState = {
       layout: this.layout,
       providers,
+      usage,
       sessions,
       selectedSessionId: this.selectedSessionId,
       messages,

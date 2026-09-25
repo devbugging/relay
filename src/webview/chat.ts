@@ -1,7 +1,7 @@
 import { isActive, type Message, type Session, type ToolEvent } from "../api/types";
 import type { UiState } from "../panel/protocol";
 import { icons } from "./icons";
-import { ago, esc } from "./util";
+import { ago, esc, level, tokens } from "./util";
 import { selected } from "./state";
 
 function toolIcon(kind: ToolEvent["kind"]): string {
@@ -54,6 +54,15 @@ function approval(s: Session): string {
   </div>`;
 }
 
+function contextMeter(used: number, limit: number, wide: boolean): string {
+  const pct = Math.min(100, Math.round((used / limit) * 100));
+  const title = `Context: ${used.toLocaleString()} of ${limit.toLocaleString()} tokens`;
+  const text = wide ? `${tokens(used)} / ${tokens(limit)} · ${pct}%` : `${pct}%`;
+  return `<span class="ctx" title="${esc(title)}"><span class="ctx-label">Context</span>
+    <progress class="meter meter-${level(pct)}" max="100" value="${pct}" aria-label="${esc(title)}"></progress>
+    <span class="ctx-value">${esc(text)}</span></span>`;
+}
+
 function head(state: UiState, s: Session | undefined): string {
   if (!s) {
     return `<div class="chat-head"><span class="title grow">New session</span></div>`;
@@ -72,6 +81,7 @@ function head(state: UiState, s: Session | undefined): string {
     state.layout === "wide"
       ? `<span class="muted ellipsis">· ${esc(p ? p.label : s.options.provider)} · ${esc(m ? m.label : s.options.model)} · ${esc(s.options.effort)} · ${esc(s.folder)} · started ${esc(ago(s.createdAt, state.now))}</span>`
       : "";
+  const ctx = s.context ? contextMeter(s.context.usedTokens, s.context.limitTokens, state.layout === "wide") : "";
   const complete = isActive(s)
     ? ""
     : s.archived
@@ -80,6 +90,7 @@ function head(state: UiState, s: Session | undefined): string {
   return `<div class="chat-head">
     ${status}
     <span class="title ellipsis">${esc(s.title)}</span>${sub}<span class="grow"></span>
+    ${ctx}
     <button class="icon-btn" data-action="fork" data-id="${esc(s.id)}" title="Fork session" aria-label="Fork session">${icons.fork}</button>
     ${isActive(s) ? `<button class="icon-btn" data-action="stop" data-id="${esc(s.id)}" title="Stop" aria-label="Stop session">${icons.stop}</button>` : ""}
     ${complete}

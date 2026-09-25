@@ -30,3 +30,26 @@ export function ago(atMs: number, now: number): string {
   return `${d}d`;
 }
 
+
+/** "43m", "2h 10m", "3d 4h" until a reset time. */
+export function until(atMs: number, now: number): string {
+  const m = Math.max(0, Math.ceil((atMs - now) / 60000));
+  if (m < 1) return "now";
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
+  const d = Math.floor(h / 24);
+  return h % 24 ? `${d}d ${h % 24}h` : `${d}d`;
+}
+
+/** "850", "48k", "1.2M" token counts. */
+export function tokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${Math.round(n / 1000)}k`;
+  return `${(n / 1_000_000).toFixed(n % 1_000_000 ? 1 : 0)}M`;
+}
+
+/** Colour band for a 0-100 fill: fine, getting close, nearly out. */
+export function level(percent: number): "ok" | "warn" | "crit" {
+  return percent >= 90 ? "crit" : percent >= 75 ? "warn" : "ok";
+}

@@ -1,4 +1,4 @@
-import type { ApprovalDecision, Message, ProviderInfo, Session, SessionOptions } from "./types";
+import type { ApprovalDecision, Message, ProviderInfo, ProviderUsage, Session, SessionOptions } from "./types";
 
 export type Unsubscribe = () => void;
 
@@ -9,6 +9,13 @@ export type Unsubscribe = () => void;
  */
 export interface SessionsApi {
   listProviders(): Promise<ProviderInfo[]>;
+
+  /**
+   * Plan usage limits per provider. Real sources: Claude's get_usage control
+   * request and rate_limit_event, Codex app-server's account/rateLimits/read and
+   * account/rateLimits/updated. Only available with a subscription login.
+   */
+  getUsage(): Promise<ProviderUsage[]>;
 
   listSessions(): Promise<Session[]>;
   getMessages(sessionId: string): Promise<Message[]>;

@@ -1,4 +1,4 @@
-import type { ApprovalDecision, Message, ProviderInfo, Session, SessionOptions } from "../api/types";
+import type { ApprovalDecision, Message, ProviderInfo, ProviderUsage, Session, SessionOptions } from "../api/types";
 
 export type Layout = "sidebar" | "wide";
 
@@ -6,6 +6,7 @@ export type Layout = "sidebar" | "wide";
 export interface UiState {
   layout: Layout;
   providers: ProviderInfo[];
+  usage: ProviderUsage[];
   sessions: Session[];
   selectedSessionId?: string;
   messages: Message[];

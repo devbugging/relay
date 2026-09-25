@@ -55,8 +55,42 @@ export interface Session {
   /** 1-based index of that message in the parent, for display. */
   forkedFromIndex?: number;
   pendingApproval?: PendingApproval;
+  /** Context window fill as of the last model turn. */
+  context?: ContextUsage;
   /** Path of the transcript file on disk. */
   transcriptPath: string;
+}
+
+export interface ContextUsage {
+  usedTokens: number;
+  /** The model's context window. */
+  limitTokens: number;
+}
+
+/**
+ * One rate-limit window of a subscription plan, e.g. the rolling 5 hour
+ * window or a weekly cap. Each provider reports whichever windows it has.
+ */
+export interface UsageWindow {
+  id: string;
+  label: string;
+  /** 0 to 100. */
+  usedPercent: number;
+  resetsAt?: number;
+  /** Extra context such as "$12.40 of $50". */
+  detail?: string;
+}
+
+export interface ProviderUsage {
+  provider: ProviderId;
+  /** Plan name when known, e.g. "Max" or "Plus". */
+  plan?: string;
+  windows: UsageWindow[];
+  /** Values that aren't a percentage, e.g. a credit balance. */
+  extras?: Array<{ label: string; value: string }>;
+  /** Why no windows are shown, e.g. signed in with an API key. */
+  note?: string;
+  updatedAt: number;
 }
 
 export type MessageRole = "user" | "assistant";

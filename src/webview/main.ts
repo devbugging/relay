@@ -3,7 +3,8 @@ import type { ToWebview, UiState } from "../panel/protocol";
 import { renderChat } from "./chat";
 import { bindComposerOnce, refreshChips, renderComposer } from "./composer";
 import { renderSessions } from "./sessions";
-import { post } from "./state";
+import { renderUsage, usageOpen } from "./usage";
+import { local, post } from "./state";
 
 let state: UiState | undefined;
 let shellBuilt = false;
@@ -18,6 +19,10 @@ function buildShell(layout: UiState["layout"]): void {
   shellBuilt = true;
 }
 
+function renderLeft(s: UiState): string {
+  return `${renderUsage(s)}${renderSessions(s)}`;
+}
+
 function render(): void {
   if (!state) return;
   if (!shellBuilt) buildShell(state.layout);
@@ -28,7 +33,7 @@ function render(): void {
   const stickToBottom = !messages || messages.scrollHeight - messages.scrollTop - messages.clientHeight < 40;
   const prevScroll = messages ? messages.scrollTop : 0;
 
-  if (left) left.innerHTML = renderSessions(state);
+  if (left) left.innerHTML = renderLeft(state);
   if (chat) chat.outerHTML = `<div id="chat" class="chat-wrap">${renderChat(state)}</div>`;
   refreshChips(state);
 
@@ -53,7 +58,7 @@ setInterval(() => {
   if (!state.sessions.some((s) => s.status === "running")) return;
   state.now = Date.now();
   const left = document.getElementById("left");
-  if (left) left.innerHTML = renderSessions(state);
+  if (left) left.innerHTML = renderLeft(state);
 }, 1000);
 
 function messageText(mid: string): string {
@@ -93,6 +98,10 @@ app.addEventListener("click", (e) => {
     case "complete":
       e.stopPropagation();
       post({ type: "complete", sessionId: id });
+      break;
+    case "toggleUsage":
+      local.usageOpen = !usageOpen(state);
+      render();
       break;
     case "toggleAllPast":
       post({ type: "toggleAllPast" });
