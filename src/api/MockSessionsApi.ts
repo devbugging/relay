@@ -1,530 +1,303 @@
-import type { SessionsApi, Unsubscribe } from "./SessionsApi";
-import { isActive, type ApprovalDecision, type Delivery, type Message, type ProviderInfo, type ProviderUsage, type Session, type SessionOptions, type ToolEvent } from "./types";
+import type { ProviderAdapter, TurnResult, TurnSink, TurnTarget } from "../backend/adapter";
+import { RealSessionsApi } from "../backend/RealSessionsApi";
+import { SessionStore } from "../backend/store";
+import type { SessionsApi } from "./SessionsApi";
+import type { Message, ProviderId, ProviderInfo, ProviderUsage, Session } from "./types";
 
 const MIN = 60_000;
+const HOUR = 60 * MIN;
 
-let counter = 0;
-function nextId(prefix: string): string {
-  counter += 1;
-  return `${prefix}-${counter.toString(36)}`;
-}
-
-const PROVIDERS: ProviderInfo[] = [
-  {
+const CATALOGUE: Record<ProviderId, ProviderInfo> = {
+  claude: {
     id: "claude",
     label: "Claude",
     models: [
-      { id: "claude-opus-5", label: "Opus 5" },
-      { id: "claude-sonnet-5", label: "Sonnet 5" },
-      { id: "claude-haiku-4-5", label: "Haiku 4.5" },
+      { id: "opus", label: "Opus", efforts: ["low", "medium", "high", "xhigh", "max"], defaultEffort: "high" },
+      { id: "sonnet", label: "Sonnet", efforts: ["low", "medium", "high", "xhigh", "max"], defaultEffort: "high" },
+      { id: "haiku", label: "Haiku", efforts: [] },
     ],
-    efforts: ["low", "medium", "high", "xhigh", "max"],
   },
-  {
+  codex: {
     id: "codex",
     label: "Codex",
     models: [
-      { id: "gpt-5.5", label: "gpt-5.5" },
-      { id: "gpt-5.5-mini", label: "gpt-5.5-mini" },
+      { id: "gpt-5.5", label: "gpt-5.5", efforts: ["low", "medium", "high", "xhigh"], defaultEffort: "medium" },
+      { id: "gpt-5.5-mini", label: "gpt-5.5-mini", efforts: ["low", "medium", "high"], defaultEffort: "medium" },
     ],
-    efforts: ["low", "medium", "high", "xhigh"],
   },
-];
-
-const CONTEXT_LIMITS: Record<string, number> = {
-  "claude-opus-5": 200_000,
-  "claude-sonnet-5": 200_000,
-  "claude-haiku-4-5": 200_000,
-  "gpt-5.5": 272_000,
-  "gpt-5.5-mini": 272_000,
 };
 
-function contextLimit(model: string): number {
-  return CONTEXT_LIMITS[model] || 200_000;
-}
-
-const STREAM_TEXT =
+const REPLY =
   "Looking at how sections are declared in the schema. The nested validator needs to walk each section recursively and collect unknown keys with their full path, so the error message points at the exact location.";
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 /**
- * In-memory backend with a handful of sessions in every state. Running
- * sessions stream text word by word and finish on their own, so the UI can be
- * exercised without any real agent.
+ * A pretend provider: streams a canned reply a couple of words at a time, and
+ * asks for approval when the prompt mentions a migration. It runs through the
+ * same RealSessionsApi as Claude and Codex, so the UI rules are exercised for real.
  */
-export class MockSessionsApi implements SessionsApi {
-  private sessions = new Map<string, Session>();
-  private messages = new Map<string, Message[]>();
-  private usage: ProviderUsage[] = [];
-  /** Current turn per session; a stream from an older turn stops itself. */
-  private turns = new Map<string, number>();
+class MockAdapter implements ProviderAdapter {
+  private stopped = new Set<string>();
   private listeners = new Set<() => void>();
-  private timers = new Set<ReturnType<typeof setTimeout>>();
-  private disposed = false;
 
-  constructor(private readonly cwd: string) {
-    this.seed();
+  constructor(
+    readonly id: ProviderId,
+    private readonly plan: ProviderUsage,
+  ) {}
+
+  async info(): Promise<ProviderInfo> {
+    return CATALOGUE[this.id];
   }
 
-  // -- reads ---------------------------------------------------------------
-
-  async listProviders(): Promise<ProviderInfo[]> {
-    return PROVIDERS;
+  async usage(): Promise<ProviderUsage> {
+    return { ...this.plan, windows: this.plan.windows.map((w) => ({ ...w })), updatedAt: Date.now() };
   }
 
-  async getUsage(): Promise<ProviderUsage[]> {
-    return this.usage.map((u) => ({ ...u, windows: u.windows.map((w) => ({ ...w })), extras: u.extras ? u.extras.map((x) => ({ ...x })) : undefined }));
-  }
-
-  async listSessions(): Promise<Session[]> {
-    return [...this.sessions.values()].map((s) => ({
-      ...s,
-      queued: s.queued.map((q) => ({ ...q })),
-      context: s.context ? { ...s.context } : undefined,
-    }));
-  }
-
-  async getMessages(sessionId: string): Promise<Message[]> {
-    return (this.messages.get(sessionId) || []).map((m) => ({ ...m }));
-  }
-
-  // -- writes --------------------------------------------------------------
-
-  async createSession(options: SessionOptions, cwd: string): Promise<Session> {
-    const now = Date.now();
-    const session: Session = {
-      id: nextId("s"),
-      title: "New session",
-      status: "done",
-      options,
-      cwd,
-      folder: cwd.split("/").pop() || cwd,
-      createdAt: now,
-      lastActivityAt: now,
-      unread: false,
-      archived: false,
-      queued: [],
-      transcriptPath: `${cwd}/.ai/sessions/${now}.jsonl`,
-    };
-    this.sessions.set(session.id, session);
-    this.messages.set(session.id, []);
-    this.emit();
-    return session;
-  }
-
-  async sendMessage(sessionId: string, text: string, options?: Partial<SessionOptions>, delivery: Delivery = "queue"): Promise<void> {
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
-    if (options) session.options = { ...session.options, ...options };
-    if (isActive(session)) {
-      if (delivery === "queue") {
-        session.queued.push({ id: nextId("q"), text, createdAt: Date.now() });
-        this.emit();
-        return;
+  async runTurn(target: TurnTarget, text: string, sink: TurnSink): Promise<TurnResult> {
+    this.stopped.delete(target.sessionId);
+    const stopped = () => this.stopped.has(target.sessionId);
+    sink.providerSessionId(target.providerSessionId || `mock-${target.sessionId}`);
+    if (/migrat/i.test(text)) {
+      const decision = await sink.approval({ kind: "bash", summary: "wants to run a command", detail: "npm run db:migrate -- --to latest" });
+      if (stopped()) return { ok: true };
+      if (decision === "deny") {
+        sink.text("Understood, skipping that command.");
+        return { ok: true };
       }
-      this.interrupt(session);
+      sink.tool({ id: `run-${Date.now()}`, kind: "run", label: "Ran", target: "npm run db:migrate -- --to latest", detail: "exit 0", ok: true });
     }
-    this.deliver(session, text);
-  }
-
-  async removeQueued(sessionId: string, queuedId: string): Promise<void> {
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
-    session.queued = session.queued.filter((q) => q.id !== queuedId);
-    this.emit();
-  }
-
-  /** Stops the running turn without finishing it, so nothing is flagged unread. */
-  private interrupt(session: Session): void {
-    session.pendingApproval = undefined;
-    const list = this.messages.get(session.id) || [];
-    const last = list[list.length - 1];
-    if (last && last.streaming) {
-      last.streaming = false;
-      last.text = last.text ? `${last.text} [interrupted]` : "[interrupted]";
+    const words = REPLY.split(" ");
+    let used = 30_000 + text.length * 4;
+    for (let i = 0; i < words.length; i += 2) {
+      await sleep(220 + Math.random() * 180);
+      if (stopped()) return { ok: true };
+      sink.text((i ? " " : "") + words.slice(i, i + 2).join(" "));
+      used += 450;
+      sink.context({ usedTokens: used, limitTokens: this.id === "claude" ? 200_000 : 272_000 });
+      for (const w of this.plan.windows) if (w.resetsAt) w.usedPercent = Math.min(100, w.usedPercent + 0.02);
     }
-    session.status = "done";
+    sink.checkpoint(`mock-msg-${Date.now()}`);
+    return { ok: true };
   }
 
-  /** The turn ended: start the next queued message, or settle into done. */
-  private finishTurn(session: Session, status: Session["status"]): void {
-    const next = session.queued.shift();
-    if (next) this.deliver(session, next.text);
-    else this.touch(session, status);
+  async interrupt(sessionId: string): Promise<void> {
+    this.stopped.add(sessionId);
   }
 
-  private deliver(session: Session, text: string): void {
-    const sessionId = session.id;
-    const list = this.messages.get(sessionId) || [];
-    session.unread = false;
-    if (!session.context) session.context = { usedTokens: 14_000, limitTokens: contextLimit(session.options.model) };
-    if (list.length === 0) session.title = text.length > 48 ? text.slice(0, 45) + "…" : text;
-    list.push({ id: nextId("m"), role: "user", text, createdAt: Date.now() });
-    this.messages.set(sessionId, list);
-    for (let s: Session | undefined = session; s; s = s.parentId ? this.sessions.get(s.parentId) : undefined) {
-      s.archived = false;
-    }
-    this.touch(session, "running");
-    this.streamReply(sessionId, STREAM_TEXT);
-  }
-
-  async forkSession(sessionId: string, fromMessageId?: string): Promise<Session> {
-    const parent = this.sessions.get(sessionId);
-    if (!parent) throw new Error(`No session ${sessionId}`);
-    const parentMessages = this.messages.get(sessionId) || [];
-    const cut = fromMessageId ? parentMessages.findIndex((m) => m.id === fromMessageId) : parentMessages.length - 1;
-    const kept = parentMessages.slice(0, cut + 1).map((m) => ({ ...m, streaming: false }));
-    const now = Date.now();
-    const fork: Session = {
-      ...parent,
-      id: nextId("s"),
-      title: `Fork of ${parent.title}`,
-      status: "done",
-      createdAt: now,
-      lastActivityAt: now,
-      unread: false,
-      archived: false,
-      queued: [],
-      parentId: parent.id,
-      forkedFromMessageId: kept.length ? kept[kept.length - 1].id : undefined,
-      forkedFromIndex: kept.length,
-      pendingApproval: undefined,
-      transcriptPath: `${parent.cwd}/.ai/sessions/${now}.jsonl`,
-    };
-    this.sessions.set(fork.id, fork);
-    this.messages.set(fork.id, kept);
-    this.emit();
-    return fork;
-  }
-
-  async stopSession(sessionId: string): Promise<void> {
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
-    session.pendingApproval = undefined;
-    const list = this.messages.get(sessionId) || [];
-    const last = list[list.length - 1];
-    if (last && last.streaming) last.streaming = false;
-    this.touch(session, "done");
-  }
-
-  async respondToApproval(sessionId: string, decision: ApprovalDecision): Promise<void> {
-    const session = this.sessions.get(sessionId);
-    if (!session || !session.pendingApproval) return;
-    const approval = session.pendingApproval;
-    session.pendingApproval = undefined;
-    const list = this.messages.get(sessionId) || [];
-    if (decision === "deny") {
-      list.push({ id: nextId("m"), role: "assistant", text: "Understood, skipping that command.", createdAt: Date.now() });
-      this.finishTurn(session, "done");
-      return;
-    }
-    const tool: ToolEvent = { id: nextId("t"), kind: "run", label: "Ran", target: approval.detail, detail: "exit 0", ok: true };
-    list.push({ id: nextId("m"), role: "assistant", text: "", createdAt: Date.now(), tools: [tool] });
-    this.touch(session, "running");
-    this.streamReply(sessionId, "Migration applied. Running the test suite against the new schema now.");
-  }
-
-  async renameSession(sessionId: string, title: string): Promise<void> {
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
-    session.title = title;
-    this.emit();
-  }
-
-  async markSeen(sessionId: string): Promise<void> {
-    const session = this.sessions.get(sessionId);
-    if (!session || !session.unread) return;
-    session.unread = false;
-    session.seenAt = Date.now();
-    this.emit();
-  }
-
-  async archiveSession(sessionId: string): Promise<void> {
-    const archive = (id: string) => {
-      const s = this.sessions.get(id);
-      if (!s) return;
-      if (!isActive(s)) {
-        s.archived = true;
-        s.unread = false;
-      }
-      for (const child of this.sessions.values()) if (child.parentId === id) archive(child.id);
-    };
-    archive(sessionId);
-    this.emit();
-  }
-
-  onDidChange(listener: () => void): Unsubscribe {
+  onDidChange(listener: () => void): void {
     this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
   }
 
   dispose(): void {
-    this.disposed = true;
-    for (const t of this.timers) clearTimeout(t);
-    this.timers.clear();
     this.listeners.clear();
   }
+}
 
-  // -- internals -----------------------------------------------------------
+/** The whole UI against fake providers, seeded with sessions in every group. */
+export function createMockSessionsApi(cwd: string): SessionsApi {
+  const now = Date.now();
+  const store = new SessionStore();
+  seed(store, cwd, now);
+  const api = new RealSessionsApi(store, [
+    new MockAdapter("claude", {
+      provider: "claude",
+      plan: "Max",
+      updatedAt: now,
+      windows: [
+        // Claude Code's /usage rows.
+        { id: "session", label: "Session (5h)", usedPercent: 42, resetsAt: now + 2 * HOUR + 10 * MIN },
+        { id: "weekly_all", label: "Week · all models", usedPercent: 18, resetsAt: now + 3 * 24 * HOUR + 5 * HOUR },
+        { id: "weekly_fable", label: "Week · Fable", usedPercent: 31, resetsAt: now + 3 * 24 * HOUR + 5 * HOUR },
+        { id: "extra_usage", label: "Extra usage", usedPercent: 25, detail: "$12.40 of $50 this month" },
+      ],
+    }),
+    new MockAdapter("codex", {
+      provider: "codex",
+      plan: "Plus",
+      updatedAt: now,
+      windows: [
+        // Codex's /status: primary and secondary windows, labelled by length, plus credits.
+        { id: "primary", label: "5h limit", usedPercent: 12, resetsAt: now + 4 * HOUR + 20 * MIN },
+        { id: "secondary", label: "Weekly limit", usedPercent: 78, resetsAt: now + 4 * 24 * HOUR },
+      ],
+      extras: [{ label: "Credits", value: "140 left" }],
+    }),
+  ]);
+  // Put three sessions mid-turn: two streaming, one stopped at an approval.
+  void api.sendMessage("s-parse", "Good. Now handle the nested sections validation you skipped.");
+  void api.sendMessage("s-loadenv", "Keep going with loadEnv.");
+  void api.sendMessage("s-migrate", "Run the migration to check it applies cleanly.");
+  return api;
+}
 
-  private emit(): void {
-    for (const l of this.listeners) l();
-  }
+function seed(store: SessionStore, cwd: string, now: number): void {
+  const folder = cwd.split("/").pop() || cwd;
+  const base = (id: string, provider: Session["options"]["provider"], model: string) => ({
+    id,
+    options: { provider, model, effort: "medium" as const },
+    cwd,
+    folder,
+    unread: false,
+    archived: false,
+    queued: [],
+    providerSessionId: `mock-${id}`,
+    transcriptPath: "",
+  });
+  const put = (s: Session, msgs: Message[]) => {
+    // Roughly: system prompt and tools, plus a few thousand tokens per turn.
+    s.context = { usedTokens: 14_000 + msgs.length * 9_000, limitTokens: s.options.provider === "claude" ? 200_000 : 272_000 };
+    store.put(s, msgs);
+    return s;
+  };
 
-  private touch(session: Session, status: Session["status"]): void {
-    const wasActive = isActive(session);
-    const nowFinished = status === "done" || status === "failed";
-    if (wasActive && nowFinished) session.unread = true;
-    session.status = status;
-    session.lastActivityAt = Date.now();
-    this.emit();
-  }
-
-  private later(ms: number, fn: () => void): void {
-    const t = setTimeout(() => {
-      this.timers.delete(t);
-      if (!this.disposed) fn();
-    }, ms);
-    this.timers.add(t);
-  }
-
-  /** Grows the session's context and nudges its provider's plan windows, as a real turn would. */
-  private spend(s: Session, tokens: number): void {
-    if (s.context) s.context.usedTokens = Math.min(s.context.limitTokens, s.context.usedTokens + tokens);
-    const usage = this.usage.find((u) => u.provider === s.options.provider);
-    if (usage) for (const w of usage.windows.filter((x) => x.resetsAt)) w.usedPercent = Math.min(100, w.usedPercent + 0.02);
-  }
-
-  /** Appends an assistant message and reveals it a few words at a time. */
-  private streamReply(sessionId: string, fullText: string, stepMs = 180): void {
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
-    const list = this.messages.get(sessionId) || [];
-    const msg: Message = { id: nextId("m"), role: "assistant", text: "", createdAt: Date.now(), streaming: true };
-    list.push(msg);
-    const words = fullText.split(" ");
-    const turn = (this.turns.get(sessionId) || 0) + 1;
-    this.turns.set(sessionId, turn);
-    let i = 0;
-    const step = () => {
-      const s = this.sessions.get(sessionId);
-      if (!s || s.status !== "running" || this.turns.get(sessionId) !== turn) return;
-      i += 2;
-      msg.text = words.slice(0, i).join(" ");
-      s.lastActivityAt = Date.now();
-      this.spend(s, 450);
-      if (i >= words.length) {
-        msg.text = fullText;
-        msg.streaming = false;
-        this.finishTurn(s, "done");
-        return;
-      }
-      this.emit();
-      this.later(stepMs + Math.random() * 140, step);
-    };
-    this.later(400, step);
-  }
-
-  private seed(): void {
-    const now = Date.now();
-    const HOUR = 60 * MIN;
-    this.usage = [
+  // Working once bootstrapped: a streaming session with a streaming fork, and one at an approval.
+  const parse = put(
+    {
+      ...base("s-parse", "claude", "opus"),
+      title: "Refactor parseConfig to throw on unknown keys",
+      status: "done",
+      createdAt: now - 2 * MIN - 14_000,
+      lastActivityAt: now,
+    },
+    [
+      { id: "m-p1", role: "user", text: "Implement parseConfig() in src/config.ts. Unknown keys should throw, not warn.", createdAt: now - 2 * MIN },
       {
-        provider: "claude",
-        plan: "Max",
-        updatedAt: now,
-        windows: [
-          // Claude Code's /usage: current session, current week (all models), per-model weeks, extra usage.
-          { id: "five_hour", label: "Session (5h)", usedPercent: 42, resetsAt: now + 2 * HOUR + 10 * MIN },
-          { id: "seven_day", label: "Week · all models", usedPercent: 18, resetsAt: now + 3 * 24 * HOUR + 5 * HOUR },
-          { id: "seven_day_sonnet", label: "Week · Sonnet", usedPercent: 9, resetsAt: now + 3 * 24 * HOUR + 5 * HOUR },
-          { id: "model_scoped:fable", label: "Week · Fable", usedPercent: 31, resetsAt: now + 3 * 24 * HOUR + 5 * HOUR },
-          { id: "extra_usage", label: "Extra usage", usedPercent: 25, detail: "$12.40 of $50 this month" },
+        id: "m-p2",
+        role: "assistant",
+        text: "I'll add a strict parser. Reading the current file first.",
+        createdAt: now - 2 * MIN + 5000,
+        tools: [
+          { id: "t1", kind: "read", label: "Read", target: "src/config.ts" },
+          { id: "t2", kind: "edit", label: "Edited", target: "src/config.ts", added: 42, removed: 3 },
+          { id: "t3", kind: "run", label: "Ran", target: "npm test", detail: "12 passed", ok: true },
         ],
       },
       {
-        provider: "codex",
-        plan: "Plus",
-        updatedAt: now,
-        windows: [
-          // Codex's /status: primary and secondary windows, labelled by length, plus credits.
-          { id: "primary", label: "5h limit", usedPercent: 12, resetsAt: now + 4 * HOUR + 20 * MIN },
-          { id: "secondary", label: "Weekly limit", usedPercent: 78, resetsAt: now + 4 * 24 * HOUR },
+        id: "m-p3",
+        role: "assistant",
+        text: "Done. parseConfig now throws ConfigError listing every unknown key, and the tests cover nested sections.",
+        createdAt: now - MIN - 20_000,
+      },
+    ],
+  );
+
+  put(
+    {
+      ...base("s-loadenv", "codex", "gpt-5.5"),
+      title: "Change loadEnv to use parseConfig",
+      status: "done",
+      createdAt: now - 41_000,
+      lastActivityAt: now,
+      parentId: parse.id,
+      forkedFromMessageId: "m-p3",
+      forkedFromIndex: 3,
+    },
+    [
+      { id: "m-l1", role: "user", text: "Now also make loadEnv() go through parseConfig so both paths validate the same way.", createdAt: now - 41_000 },
+      {
+        id: "m-l2",
+        role: "assistant",
+        text: "Reading loadEnv and its callers.",
+        createdAt: now - 35_000,
+        tools: [
+          { id: "t4", kind: "read", label: "Read", target: "src/env.ts" },
+          { id: "t5", kind: "read", label: "Read", target: "src/index.ts" },
         ],
-        extras: [{ label: "Credits", value: "140 left" }],
       },
-    ];
-    const cwd = this.cwd;
-    const folder = cwd.split("/").pop() || cwd;
-    const base = (id: string, provider: Session["options"]["provider"], model: string) => ({
-      id,
-      options: { provider, model, effort: "medium" as const },
-      cwd,
-      folder,
-      unread: false,
-      archived: false,
-      queued: [],
-      transcriptPath: `${cwd}/.ai/sessions/${id}.jsonl`,
-    });
-    const put = (s: Session, msgs: Message[]) => {
-      // Roughly: system prompt and tools, plus a few thousand tokens per turn.
-      s.context = { usedTokens: 14_000 + msgs.length * 9_000 + (s.id.length % 7) * 3_100, limitTokens: contextLimit(s.options.model) };
-      this.sessions.set(s.id, s);
-      this.messages.set(s.id, msgs);
-      return s;
-    };
+    ],
+  );
 
-    // Working: a running session with a running fork, and one waiting for approval.
-    const parse = put(
+  put(
+    {
+      ...base("s-migrate", "codex", "gpt-5.5"),
+      title: "Migrate rollouts to sqlite",
+      status: "done",
+      createdAt: now - 6 * MIN,
+      lastActivityAt: now - 40_000,
+    },
+    [
+      { id: "m-g1", role: "user", text: "Move rollout state from the JSON file into sqlite.", createdAt: now - 6 * MIN },
       {
-        ...base("s-parse", "claude", "claude-opus-5"),
-        title: "Refactor parseConfig to throw on unknown keys",
-        status: "running",
-        createdAt: now - 2 * MIN - 14_000,
-        lastActivityAt: now,
+        id: "m-g2",
+        role: "assistant",
+        text: "Schema and migration are written.",
+        createdAt: now - 40_000,
+        tools: [{ id: "t6", kind: "write", label: "Wrote", target: "migrations/004_rollouts.sql", added: 31, removed: 0 }],
       },
-      [
-        { id: "m-p1", role: "user", text: "Implement parseConfig() in src/config.ts. Unknown keys should throw, not warn.", createdAt: now - 2 * MIN },
-        {
-          id: "m-p2",
-          role: "assistant",
-          text: "I'll add a strict parser. Reading the current file first.",
-          createdAt: now - 2 * MIN + 5000,
-          tools: [
-            { id: "t1", kind: "read", label: "Read", target: "src/config.ts" },
-            { id: "t2", kind: "edit", label: "Edited", target: "src/config.ts", added: 42, removed: 3 },
-            { id: "t3", kind: "run", label: "Ran", target: "npm test", detail: "12 passed", ok: true },
-          ],
-        },
-        {
-          id: "m-p3",
-          role: "assistant",
-          text: "Done. parseConfig now throws ConfigError listing every unknown key, and the tests cover nested sections.",
-          createdAt: now - MIN - 20_000,
-        },
-        { id: "m-p4", role: "user", text: "Good. Now handle the nested sections validation you skipped.", createdAt: now - 30_000 },
-      ],
-    );
-    this.streamReply(parse.id, STREAM_TEXT, 600);
+    ],
+  );
 
-    const loadenv = put(
-      {
-        ...base("s-loadenv", "codex", "gpt-5.5"),
-        title: "Change loadEnv to use parseConfig",
-        status: "running",
-        createdAt: now - 41_000,
-        lastActivityAt: now,
-        parentId: parse.id,
-        forkedFromMessageId: "m-p3",
-        forkedFromIndex: 3,
-      },
-      [
-        { id: "m-l1", role: "user", text: "Now also make loadEnv() go through parseConfig so both paths validate the same way.", createdAt: now - 41_000 },
-        {
-          id: "m-l2",
-          role: "assistant",
-          text: "Reading loadEnv and its callers.",
-          createdAt: now - 35_000,
-          tools: [
-            { id: "t4", kind: "read", label: "Read", target: "src/env.ts" },
-            { id: "t5", kind: "read", label: "Read", target: "src/index.ts" },
-          ],
-        },
-      ],
-    );
-    this.streamReply(loadenv.id, "loadEnv now builds a raw object from process.env and hands it to parseConfig, so unknown keys fail the same way in both paths.", 350);
+  // Ready to review: finished, not opened yet. One has a fork that was already read.
+  const mock = put(
+    {
+      ...base("s-mock", "claude", "sonnet"),
+      title: "Session panel mock in HTML",
+      status: "done",
+      unread: true,
+      createdAt: now - 25 * MIN,
+      lastActivityAt: now - 4 * MIN,
+    },
+    [
+      { id: "m-m1", role: "user", text: "Make a simple mock of the sessions panel in HTML and CSS.", createdAt: now - 25 * MIN },
+      { id: "m-m2", role: "assistant", text: "Two artboards: the sidebar with chat, and the sidebar with past sessions expanded.", createdAt: now - 4 * MIN },
+    ],
+  );
+  put(
+    {
+      ...base("s-mock-grid", "claude", "sonnet"),
+      title: "Try alternative with grid layout",
+      status: "done",
+      createdAt: now - 9 * MIN,
+      lastActivityAt: now - 6 * MIN,
+      parentId: mock.id,
+      forkedFromMessageId: "m-m2",
+      forkedFromIndex: 2,
+    },
+    [
+      { id: "m-mg1", role: "user", text: "Same thing but with a CSS grid instead of flex.", createdAt: now - 9 * MIN },
+      { id: "m-mg2", role: "assistant", text: "Grid version done, it lines up the fork tree columns better.", createdAt: now - 6 * MIN },
+    ],
+  );
+  put(
+    {
+      ...base("s-lint", "codex", "gpt-5.5-mini"),
+      title: "Fix eslint warnings in webview",
+      status: "failed",
+      unread: true,
+      createdAt: now - 18 * MIN,
+      lastActivityAt: now - 11 * MIN,
+    },
+    [
+      { id: "m-e1", role: "user", text: "Clear the eslint warnings under src/webview.", createdAt: now - 18 * MIN },
+      { id: "m-e2", role: "assistant", text: "Stopped: eslint is not installed in this project, and I was told not to add dependencies.", createdAt: now - 11 * MIN },
+    ],
+  );
 
+  // Past: opened, not completed. Two inside the 2 hour window, the rest older.
+  const past: Array<[string, string, Session["options"]["provider"], number, Session["status"], boolean]> = [
+    ["s-rtsp", "Fix RTSP camera timeout", "codex", 38, "done", false],
+    ["s-readme", "Rewrite README intro", "claude", 95, "done", false],
+    ["s-adr", "Write ADR for session storage", "claude", 50, "done", true],
+    ["s-o1", "Plan: instagram comment feed", "claude", 3 * 60, "done", false],
+    ["s-o2", "Replace Nacrt with Projektni Pogoji", "codex", 27 * 60, "done", false],
+    ["s-o3", "Talk: agent0 architecture options", "claude", 2 * 24 * 60, "done", true],
+    ["s-o4", "Lighthouse fixes for landing", "claude", 3 * 24 * 60, "failed", false],
+  ];
+  for (const [id, title, provider, minutesAgo, status, archived] of past) {
     put(
       {
-        ...base("s-migrate", "codex", "gpt-5.5"),
-        title: "Migrate rollouts to sqlite",
-        status: "waiting",
-        createdAt: now - 6 * MIN,
-        lastActivityAt: now - 40_000,
-        pendingApproval: { kind: "bash", summary: "wants to run a command", detail: "npm run db:migrate -- --to latest" },
+        ...base(id, provider, provider === "claude" ? "sonnet" : "gpt-5.5"),
+        title,
+        status,
+        archived,
+        createdAt: now - minutesAgo * MIN - 10 * MIN,
+        lastActivityAt: now - minutesAgo * MIN,
       },
       [
-        { id: "m-g1", role: "user", text: "Move rollout state from the JSON file into sqlite.", createdAt: now - 6 * MIN },
-        {
-          id: "m-g2",
-          role: "assistant",
-          text: "Schema and migration are written. I need to run the migration to check it applies cleanly.",
-          createdAt: now - 40_000,
-          tools: [{ id: "t6", kind: "write", label: "Wrote", target: "migrations/004_rollouts.sql", added: 31, removed: 0 }],
-        },
+        { id: `${id}-u`, role: "user", text: title, createdAt: now - minutesAgo * MIN - 10 * MIN },
+        { id: `${id}-a`, role: "assistant", text: status === "failed" ? "Stopped: the build failed before the audit could run." : "Done.", createdAt: now - minutesAgo * MIN },
       ],
     );
-
-    // Ready to review: finished, not opened yet. One has a fork that was already read.
-    const mock = put(
-      {
-        ...base("s-mock", "claude", "claude-sonnet-5"),
-        title: "Session panel mock in HTML",
-        status: "done",
-        unread: true,
-        createdAt: now - 25 * MIN,
-        lastActivityAt: now - 4 * MIN,
-      },
-      [
-        { id: "m-m1", role: "user", text: "Make a simple mock of the sessions panel in HTML and CSS.", createdAt: now - 25 * MIN },
-        { id: "m-m2", role: "assistant", text: "Two artboards: the sidebar with chat, and the sidebar with past sessions expanded.", createdAt: now - 4 * MIN },
-      ],
-    );
-    put(
-      {
-        ...base("s-mock-grid", "claude", "claude-sonnet-5"),
-        title: "Try alternative with grid layout",
-        status: "done",
-        createdAt: now - 9 * MIN,
-        lastActivityAt: now - 6 * MIN,
-        parentId: mock.id,
-        forkedFromMessageId: "m-m2",
-        forkedFromIndex: 2,
-      },
-      [
-        { id: "m-mg1", role: "user", text: "Same thing but with a CSS grid instead of flex.", createdAt: now - 9 * MIN },
-        { id: "m-mg2", role: "assistant", text: "Grid version done, it lines up the fork tree columns better.", createdAt: now - 6 * MIN },
-      ],
-    );
-    put(
-      {
-        ...base("s-lint", "codex", "gpt-5.5-mini"),
-        title: "Fix eslint warnings in webview",
-        status: "failed",
-        unread: true,
-        createdAt: now - 18 * MIN,
-        lastActivityAt: now - 11 * MIN,
-      },
-      [
-        { id: "m-e1", role: "user", text: "Clear the eslint warnings under src/webview.", createdAt: now - 18 * MIN },
-        { id: "m-e2", role: "assistant", text: "Stopped: eslint is not installed in this project, and I was told not to add dependencies.", createdAt: now - 11 * MIN },
-      ],
-    );
-
-    // Past: opened, not completed. Two inside the 2 hour window, the rest older.
-    const past: Array<[string, string, Session["options"]["provider"], number, Session["status"], boolean]> = [
-      ["s-rtsp", "Fix RTSP camera timeout", "codex", 38, "done", false],
-      ["s-readme", "Rewrite README intro", "claude", 95, "done", false],
-      ["s-adr", "Write ADR for session storage", "claude", 50, "done", true],
-      ["s-o1", "Plan: instagram comment feed", "claude", 3 * 60, "done", false],
-      ["s-o2", "Replace Nacrt with Projektni Pogoji", "codex", 27 * 60, "done", false],
-      ["s-o3", "Talk: agent0 architecture options", "claude", 2 * 24 * 60, "done", true],
-      ["s-o4", "Lighthouse fixes for landing", "claude", 3 * 24 * 60, "failed", false],
-    ];
-    for (const [id, title, provider, minutesAgo, status, archived] of past) {
-      put(
-        {
-          ...base(id, provider, provider === "claude" ? "claude-sonnet-5" : "gpt-5.5"),
-          title,
-          status,
-          archived,
-          createdAt: now - minutesAgo * MIN - 10 * MIN,
-          lastActivityAt: now - minutesAgo * MIN,
-        },
-        [
-          { id: `${id}-u`, role: "user", text: title, createdAt: now - minutesAgo * MIN - 10 * MIN },
-          { id: `${id}-a`, role: "assistant", text: status === "failed" ? "Stopped: the build failed before the audit could run." : "Done.", createdAt: now - minutesAgo * MIN },
-        ],
-      );
-    }
   }
 }

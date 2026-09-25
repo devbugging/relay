@@ -5,3 +5,4 @@ tsconfig.json
 Makefile
 .gitignore
 **/*.map
+!node_modules/@anthropic-ai/claude-agent-sdk/**

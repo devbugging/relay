@@ -13,6 +13,7 @@ export const icons = {
   check: wrap('<path d="M2.5 6.5l2.3 2.3L9.5 3.8"/>', 12),
   clock: wrap('<circle cx="6" cy="6" r="5"/><path d="M6 3.2v3.2l2 1.2"/>', 12),
   cross: wrap('<path d="M3 3l6 6M9 3l-6 6"/>', 12),
+  spawn: wrap('<circle cx="3" cy="3" r="1.4"/><circle cx="3" cy="9" r="1.4"/><circle cx="9" cy="5" r="1.4"/><path d="M3 4.4v3.2M3 8c0-2 6-1 6-2.6"/>', 12),
   eye: wrap('<path d="M1.5 6s1.8-3 4.5-3 4.5 3 4.5 3-1.8 3-4.5 3S1.5 6 1.5 6z"/><circle cx="6" cy="6" r="1.4"/>', 12),
   pencil: wrap('<path d="M8.5 1.5l2 2L4 10H2V8z"/>', 12),
   terminal: wrap('<path d="M2 3l3 3-3 3M6.5 9H10"/>', 12),

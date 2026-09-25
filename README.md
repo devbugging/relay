@@ -2,7 +2,7 @@
 
 One VS Code panel for every AI coding session you have going: Claude, Codex, and whatever comes next.
 
-Status: **UI scaffold with mock data.** Nothing talks to a real agent yet.
+Status: **Claude sessions are real** (through the installed `claude` CLI and the Agent SDK). Codex is next. Set `aiSessions.backend` to `mock` to work on the UI with seeded fake sessions.
 
 ## What's here
 
@@ -20,7 +20,14 @@ The chat sits below the list, with a composer that picks provider, model and eff
 
 An **editor tab** (`AI Sessions: Open as Editor Tab`, or the icon in the view title) shows the same thing in two columns: sessions on the left, the open session on the right. Typing with no session selected, or the `+` in the view title, starts a new one.
 
-**`SessionsApi`** ([src/api/SessionsApi.ts](src/api/SessionsApi.ts)) is the interface the UI is built against. [MockSessionsApi](src/api/MockSessionsApi.ts) seeds sessions in every group, streams replies word by word, and handles fork / stop / approve / complete in memory. The real backend replaces this one class.
+**Backends.** [RealSessionsApi](src/backend/RealSessionsApi.ts) holds the session rules (unread, complete, queue, interrupt, forks) and saves sessions to the extension's storage. Each provider is a [ProviderAdapter](src/backend/adapter.ts):
+
+- [Claude](src/backend/claude.ts): the Agent SDK driving your installed `claude`, so its login, settings, CLAUDE.md and permission rules apply. Runs in `auto` permission mode; anything it wants confirmed shows on the Allow / Deny card. Models and effort levels come from `supportedModels()` (refreshed every 30 minutes and on each new session), plan usage from the SDK's usage request, context from `getContextUsage()`. Forks branch with `resumeSessionAt`.
+- The mock ([MockSessionsApi](src/api/MockSessionsApi.ts)) is the same `RealSessionsApi` with fake adapters, so the UI rules run through the real code path.
+
+Models are never hardcoded: new ones appear once the installed CLI knows them, so keep `claude` (and later `codex`) up to date.
+
+Settings: `aiSessions.backend` (`real` or `mock`), `aiSessions.claudePath` (if `claude` isn't on PATH, `~/.local/bin`, or Homebrew).
 
 ## Layout of the code
 
@@ -30,7 +37,13 @@ src/
   api/
     types.ts              shared domain types (also imported by the webview)
     SessionsApi.ts        backend interface
-    MockSessionsApi.ts    in-memory implementation with seeded data
+    MockSessionsApi.ts    fake adapters and seeded sessions
+  backend/
+    RealSessionsApi.ts    session rules on top of provider adapters
+    adapter.ts            ProviderAdapter / TurnSink contract
+    claude.ts             Claude Agent SDK adapter
+    store.ts              sessions and messages, saved as JSON
+    binaries.ts           finds CLIs outside the extension host's PATH
   panel/
     protocol.ts           messages between extension host and webview
     PanelHost.ts          binds one webview to the API, pushes UiState snapshots
@@ -55,6 +68,6 @@ make watch     # rebuild on change; reload the dev host window with ⌘R
 
 ## Next
 
-- Real `SessionsApi` on top of the Claude Agent SDK, Codex SDK, or pi's RPC mode.
-- Real usage: Claude's `get_usage` control request and `rate_limit_event`, Codex app-server's `account/rateLimits/read` and `account/rateLimits/updated`. Both need a subscription login, not an API key. Context: Claude's `getContextUsage()`, Codex's `thread/tokenUsage/updated`.
+- Codex adapter over `codex app-server` (auto preset: on-request approvals, workspace-write sandbox).
+- Codex usage and context: `account/rateLimits/read` / `account/rateLimits/updated`, `thread/tokenUsage/updated`.
 - Transcript store on disk in one normalized format, so a session can move between providers.

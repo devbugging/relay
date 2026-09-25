@@ -1,4 +1,4 @@
-import { isActive, type Delivery, type Effort, type ProviderId } from "../api/types";
+import { isActive, type Delivery, type Effort, type ModelInfo, type ProviderId } from "../api/types";
 import type { UiState } from "../panel/protocol";
 import { icons } from "./icons";
 import { composerOptions, local, post, selected } from "./state";
@@ -23,20 +23,27 @@ export function refreshChips(state: UiState): void {
   const input = document.getElementById("input") as HTMLTextAreaElement | null;
   if (input) input.placeholder = placeholder(state);
   const opts = composerOptions(state);
-  const provider = state.providers.find((p) => p.id === opts.provider) || state.providers[0];
-  const models = provider ? provider.models : [];
-  const efforts: Effort[] = provider ? provider.efforts : ["low", "medium", "high"];
+  const provider = state.providers.find((p) => p.id === opts.provider);
+  // Keep a session's model selectable even if the live catalogue no longer lists it.
+  const models: ModelInfo[] = provider ? provider.models.slice() : [];
+  if (opts.model && !models.some((m) => m.id === opts.model)) models.unshift({ id: opts.model, label: opts.model, efforts: [] });
+  const model = models.find((m) => m.id === opts.model);
+  const efforts: Effort[] = model ? model.efforts : [];
 
   const providerSel = `<span class="chip-wrap has-dot"><span class="dot dot-${esc(opts.provider)}"></span>
     <select class="chip" id="chip-provider" aria-label="Provider">
-      ${state.providers.map((p) => `<option value="${esc(p.id)}" ${p.id === opts.provider ? "selected" : ""}>${esc(p.label)}</option>`).join("")}
+      ${state.providers
+        .map((p) => `<option value="${esc(p.id)}" ${p.id === opts.provider ? "selected" : ""} ${p.unavailable ? "disabled" : ""} title="${esc(p.unavailable || "")}">${esc(p.label)}${p.unavailable ? " (unavailable)" : ""}</option>`)
+        .join("")}
     </select></span>`;
   const modelSel = `<select class="chip" id="chip-model" aria-label="Model">
       ${models.map((m) => `<option value="${esc(m.id)}" ${m.id === opts.model ? "selected" : ""}>${esc(m.label)}</option>`).join("")}
     </select>`;
-  const effortSel = `<select class="chip" id="chip-effort" aria-label="Effort">
+  const effortSel = efforts.length
+    ? `<select class="chip" id="chip-effort" aria-label="Effort">
       ${efforts.map((e) => `<option value="${esc(e)}" ${e === opts.effort ? "selected" : ""}>${esc(e)}</option>`).join("")}
-    </select>`;
+    </select>`
+    : "";
 
   el.innerHTML = `${providerSel}${modelSel}${effortSel}<span class="grow"></span>
     <button class="icon-btn" title="Attach" aria-label="Attach file">${icons.attach}</button>
@@ -49,14 +56,23 @@ export function refreshChips(state: UiState): void {
   onChange("chip-provider", (v) => {
     const p = state.providers.find((x) => x.id === (v as ProviderId));
     opts.provider = v as ProviderId;
-    if (p && !p.models.some((m) => m.id === opts.model)) opts.model = p.models[0].id;
-    if (p && !p.efforts.includes(opts.effort)) opts.effort = p.efforts[Math.min(2, p.efforts.length - 1)];
+    if (p && p.models.length && !p.models.some((m) => m.id === opts.model)) pickModel(opts, p.models[0]);
     refreshChips(state);
   });
-  onChange("chip-model", (v) => (opts.model = v));
+  onChange("chip-model", (v) => {
+    const m = models.find((x) => x.id === v);
+    if (m) pickModel(opts, m);
+    refreshChips(state);
+  });
   onChange("chip-effort", (v) => (opts.effort = v as Effort));
   const send = document.getElementById("send");
   if (send) send.addEventListener("click", () => submit(state));
+}
+
+/** Switches model and keeps the effort if the new model accepts it, else its default. */
+function pickModel(opts: { model: string; effort: Effort }, m: ModelInfo): void {
+  opts.model = m.id;
+  if (m.efforts.length && !m.efforts.includes(opts.effort)) opts.effort = m.defaultEffort || m.efforts[Math.floor(m.efforts.length / 2)];
 }
 
 function placeholder(state: UiState): string {

@@ -9,7 +9,8 @@ const extension = {
   format: "cjs",
   platform: "node",
   target: "node20",
-  external: ["vscode"],
+  // The Agent SDK is ESM-only and spawns the CLI; it is loaded from node_modules at runtime.
+  external: ["vscode", "@anthropic-ai/claude-agent-sdk"],
   outfile: "dist/extension.js",
   sourcemap: !production,
   minify: production,

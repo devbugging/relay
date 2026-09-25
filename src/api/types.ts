@@ -10,13 +10,18 @@ export type SessionStatus = "running" | "waiting" | "done" | "failed";
 export interface ProviderInfo {
   id: ProviderId;
   label: string;
+  /** From the provider's live catalogue. Empty when it isn't available. */
   models: ModelInfo[];
-  efforts: Effort[];
+  /** Why the provider can't be used, e.g. the CLI isn't installed or signed in. */
+  unavailable?: string;
 }
 
 export interface ModelInfo {
   id: string;
   label: string;
+  /** Effort levels this model accepts; empty when it has no effort setting. */
+  efforts: Effort[];
+  defaultEffort?: Effort;
 }
 
 export interface SessionOptions {
@@ -59,6 +64,10 @@ export interface Session {
   queued: QueuedMessage[];
   /** Context window fill as of the last model turn. */
   context?: ContextUsage;
+  /** The provider's own conversation id (Claude session id, Codex thread id). */
+  providerSessionId?: string;
+  /** For a fork that hasn't run yet: where to branch from on its first turn. */
+  forkOf?: { providerSessionId: string; atProviderMessageId?: string };
   /** Path of the transcript file on disk. */
   transcriptPath: string;
 }
@@ -108,7 +117,7 @@ export type MessageRole = "user" | "assistant";
 
 export interface ToolEvent {
   id: string;
-  kind: "read" | "edit" | "write" | "run";
+  kind: "read" | "edit" | "write" | "run" | "other";
   label: string;
   target: string;
   detail?: string;
@@ -124,6 +133,8 @@ export interface Message {
   createdAt: number;
   tools?: ToolEvent[];
   streaming?: boolean;
+  /** Provider id of the last assistant message folded into this one; a fork branches here. */
+  providerMessageId?: string;
 }
 
 export type ApprovalDecision = "allow" | "deny" | "always";

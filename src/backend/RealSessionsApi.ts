@@ -1,0 +1,393 @@
+import type { SessionsApi, Unsubscribe } from "../api/SessionsApi";
+import {
+  isActive,
+  type ApprovalDecision,
+  type Delivery,
+  type Message,
+  type ProviderId,
+  type ProviderInfo,
+  type ProviderUsage,
+  type Session,
+  type SessionOptions,
+} from "../api/types";
+import type { ProviderAdapter, TurnSink, TurnTarget } from "./adapter";
+import type { SessionStore } from "./store";
+
+const MODELS_REFRESH_MS = 30 * 60 * 1000;
+const USAGE_REFRESH_MS = 5 * 60 * 1000;
+
+let counter = 0;
+function nextId(prefix: string): string {
+  counter += 1;
+  return `${prefix}-${Date.now().toString(36)}-${counter.toString(36)}`;
+}
+
+function titleFrom(text: string): string {
+  const line = text.trim().split("\n")[0];
+  return line.length > 48 ? line.slice(0, 45) + "…" : line;
+}
+
+/**
+ * The session rules (unread, complete, queue, forks) on top of one adapter per
+ * provider. The mock backend is this same class with fake adapters.
+ */
+export class RealSessionsApi implements SessionsApi {
+  private readonly adapters = new Map<ProviderId, ProviderAdapter>();
+  private providers: ProviderInfo[] = [];
+  private providersLoading: Promise<void> | undefined;
+  private usage: ProviderUsage[] = [];
+  private listeners = new Set<() => void>();
+  /** Current turn per session; events from an interrupted turn are dropped. */
+  private turns = new Map<string, number>();
+  private turnSeq = 0;
+  /** Settles when the session's current turn has fully ended. */
+  private running = new Map<string, Promise<void>>();
+  private approvals = new Map<string, (d: ApprovalDecision) => void>();
+  private timers: Array<ReturnType<typeof setInterval>> = [];
+
+  constructor(
+    private readonly store: SessionStore,
+    adapters: ProviderAdapter[],
+  ) {
+    for (const a of adapters) {
+      this.adapters.set(a.id, a);
+      a.onDidChange(() => void this.refreshUsage());
+    }
+    this.providersLoading = this.refreshProviders();
+    void this.refreshUsage();
+    this.timers.push(setInterval(() => void this.refreshProviders(), MODELS_REFRESH_MS));
+    this.timers.push(setInterval(() => void this.refreshUsage(), USAGE_REFRESH_MS));
+  }
+
+  // -- reads ---------------------------------------------------------------
+
+  async listProviders(): Promise<ProviderInfo[]> {
+    if (this.providersLoading) await this.providersLoading;
+    return this.providers;
+  }
+
+  async getUsage(): Promise<ProviderUsage[]> {
+    return this.usage;
+  }
+
+  async listSessions(): Promise<Session[]> {
+    return [...this.store.sessions.values()].map((s) => ({
+      ...s,
+      queued: s.queued.map((q) => ({ ...q })),
+      context: s.context ? { ...s.context } : undefined,
+    }));
+  }
+
+  async getMessages(sessionId: string): Promise<Message[]> {
+    return this.store.messagesOf(sessionId).map((m) => ({ ...m, tools: m.tools ? m.tools.map((t) => ({ ...t })) : undefined }));
+  }
+
+  // -- writes --------------------------------------------------------------
+
+  async createSession(options: SessionOptions, cwd: string): Promise<Session> {
+    const now = Date.now();
+    const session: Session = {
+      id: nextId("s"),
+      title: "New session",
+      status: "done",
+      options,
+      cwd,
+      folder: cwd.split(/[\\/]/).pop() || cwd,
+      createdAt: now,
+      lastActivityAt: now,
+      unread: false,
+      archived: false,
+      queued: [],
+      transcriptPath: "",
+    };
+    // A new session is a good moment to pick up models released since the last look.
+    void this.refreshProviders();
+    this.store.put(session);
+    this.emit();
+    return session;
+  }
+
+  async sendMessage(sessionId: string, text: string, options?: Partial<SessionOptions>, delivery: Delivery = "queue"): Promise<void> {
+    const session = this.store.sessions.get(sessionId);
+    if (!session) return;
+    if (options) {
+      // Another provider can't resume this one's conversation; it starts fresh.
+      if (options.provider && options.provider !== session.options.provider) {
+        session.providerSessionId = undefined;
+        session.forkOf = undefined;
+      }
+      session.options = { ...session.options, ...options };
+    }
+    if (isActive(session)) {
+      if (delivery === "queue") {
+        session.queued.push({ id: nextId("q"), text, createdAt: Date.now() });
+        this.emit();
+        return;
+      }
+      await this.interrupt(session);
+    }
+    this.startTurn(session, text);
+  }
+
+  async removeQueued(sessionId: string, queuedId: string): Promise<void> {
+    const session = this.store.sessions.get(sessionId);
+    if (!session) return;
+    session.queued = session.queued.filter((q) => q.id !== queuedId);
+    this.emit();
+  }
+
+  async forkSession(sessionId: string, fromMessageId?: string): Promise<Session> {
+    const parent = this.store.sessions.get(sessionId);
+    if (!parent) throw new Error(`No session ${sessionId}`);
+    const parentMessages = this.store.messagesOf(sessionId);
+    const cut = fromMessageId ? parentMessages.findIndex((m) => m.id === fromMessageId) : parentMessages.length - 1;
+    const kept = parentMessages.slice(0, cut + 1).map((m) => ({ ...m, streaming: false }));
+    const lastAssistant = [...kept].reverse().find((m) => m.role === "assistant" && m.providerMessageId);
+    const now = Date.now();
+    const fork: Session = {
+      ...parent,
+      id: nextId("s"),
+      title: `Fork of ${parent.title}`,
+      status: "done",
+      createdAt: now,
+      lastActivityAt: now,
+      unread: false,
+      archived: false,
+      queued: [],
+      parentId: parent.id,
+      forkedFromMessageId: kept.length ? kept[kept.length - 1].id : undefined,
+      forkedFromIndex: kept.length,
+      pendingApproval: undefined,
+      providerSessionId: undefined,
+      forkOf: parent.providerSessionId
+        ? { providerSessionId: parent.providerSessionId, atProviderMessageId: fromMessageId && lastAssistant ? lastAssistant.providerMessageId : undefined }
+        : undefined,
+    };
+    this.store.put(fork, kept);
+    this.emit();
+    return fork;
+  }
+
+  async stopSession(sessionId: string): Promise<void> {
+    const session = this.store.sessions.get(sessionId);
+    if (!session || !isActive(session)) return;
+    await this.interrupt(session);
+    session.lastActivityAt = Date.now();
+    this.emit();
+  }
+
+  async respondToApproval(sessionId: string, decision: ApprovalDecision): Promise<void> {
+    const resolve = this.approvals.get(sessionId);
+    if (resolve) resolve(decision);
+  }
+
+  async renameSession(sessionId: string, title: string): Promise<void> {
+    const session = this.store.sessions.get(sessionId);
+    if (!session) return;
+    session.title = title;
+    this.emit();
+  }
+
+  async markSeen(sessionId: string): Promise<void> {
+    const session = this.store.sessions.get(sessionId);
+    if (!session || !session.unread) return;
+    session.unread = false;
+    session.seenAt = Date.now();
+    this.emit();
+  }
+
+  async archiveSession(sessionId: string): Promise<void> {
+    const archive = (id: string) => {
+      const s = this.store.sessions.get(id);
+      if (!s) return;
+      if (!isActive(s)) {
+        s.archived = true;
+        s.unread = false;
+      }
+      for (const child of this.store.sessions.values()) if (child.parentId === id) archive(child.id);
+    };
+    archive(sessionId);
+    this.emit();
+  }
+
+  onDidChange(listener: () => void): Unsubscribe {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  dispose(): void {
+    for (const t of this.timers) clearInterval(t);
+    for (const a of this.adapters.values()) a.dispose();
+    this.listeners.clear();
+    void this.store.flush();
+  }
+
+  // -- turns ---------------------------------------------------------------
+
+  private startTurn(session: Session, text: string): void {
+    const list = this.store.messagesOf(session.id);
+    if (!list.some((m) => m.role === "user")) session.title = titleFrom(text);
+    list.push({ id: nextId("m"), role: "user", text, createdAt: Date.now() });
+    for (let s: Session | undefined = session; s; s = s.parentId ? this.store.sessions.get(s.parentId) : undefined) {
+      s.archived = false;
+    }
+    session.unread = false;
+    session.status = "running";
+    session.lastActivityAt = Date.now();
+    this.emit();
+
+    const turn = ++this.turnSeq;
+    this.turns.set(session.id, turn);
+    const live = () => this.turns.get(session.id) === turn;
+    const done = this.runTurn(session, text, live).catch((err: unknown) => {
+      if (live()) this.endTurn(session, `Error: ${err instanceof Error ? err.message : String(err)}`);
+    });
+    this.running.set(session.id, done);
+  }
+
+  private async runTurn(session: Session, text: string, live: () => boolean): Promise<void> {
+    const adapter = this.adapters.get(session.options.provider);
+    if (!adapter) throw new Error(`No backend for ${session.options.provider}`);
+    const list = this.store.messagesOf(session.id);
+    let current: Message | undefined;
+    const assistant = (): Message => {
+      if (!current) {
+        current = { id: nextId("m"), role: "assistant", text: "", createdAt: Date.now(), streaming: true, tools: [] };
+        list.push(current);
+      }
+      return current;
+    };
+    const activity = () => {
+      session.lastActivityAt = Date.now();
+      this.emit();
+    };
+
+    const sink: TurnSink = {
+      providerSessionId: (id) => {
+        if (!live()) return;
+        session.providerSessionId = id;
+        session.forkOf = undefined;
+        this.emit();
+      },
+      text: (delta) => {
+        if (!live()) return;
+        assistant().text += delta;
+        activity();
+      },
+      tool: (event) => {
+        if (!live()) return;
+        let m = assistant();
+        const tools = m.tools || (m.tools = []);
+        const i = tools.findIndex((t) => t.id === event.id);
+        if (i >= 0) tools[i] = { ...tools[i], ...event };
+        else {
+          // Tools render above text, so a tool after text opens a new message.
+          if (m.text) {
+            m.streaming = false;
+            current = undefined;
+            m = assistant();
+          }
+          (m.tools || (m.tools = [])).push(event);
+        }
+        activity();
+      },
+      approval: (request) =>
+        new Promise<ApprovalDecision>((resolve) => {
+          if (!live()) return resolve("deny");
+          session.status = "waiting";
+          session.pendingApproval = request;
+          this.approvals.set(session.id, (decision) => {
+            this.approvals.delete(session.id);
+            session.pendingApproval = undefined;
+            if (live()) session.status = "running";
+            activity();
+            resolve(decision);
+          });
+          activity();
+        }),
+      context: (usage) => {
+        if (!live()) return;
+        session.context = usage;
+        this.emit();
+      },
+      checkpoint: (providerMessageId) => {
+        if (!live()) return;
+        const target = current || [...list].reverse().find((m) => m.role === "assistant");
+        if (target) target.providerMessageId = providerMessageId;
+      },
+    };
+
+    const target: TurnTarget = {
+      sessionId: session.id,
+      cwd: session.cwd,
+      options: session.options,
+      providerSessionId: session.providerSessionId,
+      forkOf: session.forkOf,
+    };
+    const result = await adapter.runTurn(target, text, sink);
+    if (!live()) return;
+    if (current) current.streaming = false;
+    this.endTurn(session, result.ok ? undefined : result.error || "The turn failed.");
+    void this.refreshUsage();
+  }
+
+  /** The turn ended on its own: start the next queued message, or settle and flag it unread. */
+  private endTurn(session: Session, error?: string): void {
+    this.turns.delete(session.id);
+    const list = this.store.messagesOf(session.id);
+    for (const m of list) m.streaming = false;
+    if (error) list.push({ id: nextId("m"), role: "assistant", text: error, createdAt: Date.now() });
+    const next = error ? undefined : session.queued.shift();
+    if (next) return this.startTurn(session, next.text);
+    session.status = error ? "failed" : "done";
+    session.unread = true;
+    session.lastActivityAt = Date.now();
+    this.emit();
+  }
+
+  /** Stops the running turn and waits for the provider to let go, without flagging it unread. */
+  private async interrupt(session: Session): Promise<void> {
+    this.turns.delete(session.id);
+    const resolve = this.approvals.get(session.id);
+    if (resolve) resolve("deny");
+    session.pendingApproval = undefined;
+    const list = this.store.messagesOf(session.id);
+    const last = list[list.length - 1];
+    if (last && last.role === "assistant" && last.streaming) last.text = last.text ? `${last.text} [interrupted]` : "[interrupted]";
+    for (const m of list) m.streaming = false;
+    session.status = "done";
+    this.emit();
+    const adapter = this.adapters.get(session.options.provider);
+    if (adapter) await adapter.interrupt(session.id);
+    const running = this.running.get(session.id);
+    if (running) await running;
+  }
+
+  // -- catalogue and usage -------------------------------------------------
+
+  private async refreshProviders(): Promise<void> {
+    this.providers = await Promise.all(
+      [...this.adapters.values()].map((a) =>
+        a.info().catch((err: unknown): ProviderInfo => ({
+          id: a.id,
+          label: a.id === "claude" ? "Claude" : "Codex",
+          models: [],
+          unavailable: err instanceof Error ? err.message : String(err),
+        })),
+      ),
+    );
+    this.providersLoading = undefined;
+    this.emit();
+  }
+
+  private async refreshUsage(): Promise<void> {
+    const all = await Promise.all([...this.adapters.values()].map((a) => a.usage().catch(() => undefined)));
+    this.usage = all.filter((u): u is ProviderUsage => !!u);
+    this.emit();
+  }
+
+  private emit(): void {
+    this.store.save();
+    for (const l of this.listeners) l();
+  }
+}

@@ -60,6 +60,29 @@
           "group": "navigation@2"
         }
       ]
+    },
+    "configuration": {
+      "title": "AI Sessions",
+      "properties": {
+        "aiSessions.backend": {
+          "type": "string",
+          "enum": [
+            "real",
+            "mock"
+          ],
+          "default": "real",
+          "enumDescriptions": [
+            "Run sessions through the installed Claude Code and Codex CLIs.",
+            "Fake providers with seeded sessions, for working on the UI."
+          ],
+          "description": "Where sessions run."
+        },
+        "aiSessions.claudePath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the claude executable. Empty: look on PATH and the usual install locations."
+        }
+      }
     }
   },
   "scripts": {
@@ -73,5 +96,8 @@
     "@types/vscode": "^1.137.0",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.282"
   }
 }

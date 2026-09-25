@@ -11,6 +11,8 @@ function toolIcon(kind: ToolEvent["kind"]): string {
     case "edit":
     case "write":
       return icons.pencil;
+    case "other":
+      return icons.spawn;
     case "run":
       return icons.terminal;
   }
