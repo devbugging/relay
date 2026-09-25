@@ -94,7 +94,16 @@ export function submit(state: UiState, delivery: Delivery = "queue"): void {
   if (!text) return;
   post({ type: "send", sessionId: state.selectedSessionId, text, options: { ...composerOptions(state) }, delivery });
   input.value = "";
+  autosize(input);
   local.composerFor = undefined;
+}
+
+/** Fits the box to its text, up to the CSS max-height (10 lines); past that it scrolls. */
+function autosize(input: HTMLTextAreaElement): void {
+  input.style.height = "auto";
+  const max = parseFloat(getComputedStyle(input).maxHeight);
+  input.style.height = `${Math.min(input.scrollHeight, max)}px`;
+  input.style.overflowY = input.scrollHeight > max ? "auto" : "hidden";
 }
 
 function stop(sessionId: string): void {
@@ -104,6 +113,7 @@ function stop(sessionId: string): void {
 export function bindComposerOnce(getState: () => UiState | undefined): void {
   const input = document.getElementById("input") as HTMLTextAreaElement | null;
   if (!input) return;
+  input.addEventListener("input", () => autosize(input));
   // ↵ sends (queued while the session works), ⇧↵ interrupts and sends, ⌥↵ is a new line, esc stops.
   input.addEventListener("keydown", (e) => {
     if (e.isComposing) return;
@@ -120,6 +130,7 @@ export function bindComposerOnce(getState: () => UiState | undefined): void {
     e.preventDefault();
     if (e.altKey) {
       input.setRangeText("\n", input.selectionStart, input.selectionEnd, "end");
+      autosize(input);
       return;
     }
     const s = getState();
