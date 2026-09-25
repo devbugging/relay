@@ -10,6 +10,7 @@ const PROMPT = [
   "You name coding-chat sessions for a sidebar list.",
   "The <stdin> block holds the session's current title and the user's latest message.",
   "Reply with a one-line title (at most 6 words) saying what the latest message is about.",
+  "Write it in sentence case: capitalize only the first word, plus names and acronyms that are always written that way (\"Fix login redirect on Safari\").",
   "If the message is a short follow-up that doesn't change the topic (\"yes\", \"do it\", \"commit\"), reply with the current title unchanged.",
   "Reply with the title only: no quotes, no trailing period. Do not run any commands or read any files.",
 ].join("\n");
@@ -45,5 +46,15 @@ export function codexTitler(codexPath: () => string | undefined, model: () => st
 function clean(raw: string): string | undefined {
   const line = raw.trim().split("\n")[0].trim().replace(/^["'`]+|["'`.]+$/g, "").trim();
   if (!line) return undefined;
-  return line.length > MAX_TITLE ? line.slice(0, MAX_TITLE - 1) + "…" : line;
+  const title = sentenceCase(line);
+  return title.length > MAX_TITLE ? title.slice(0, MAX_TITLE - 1) + "…" : title;
+}
+
+/**
+ * Small models often answer in Title Case. Lowercases the plainly capitalized
+ * words after the first, leaving acronyms and identifiers (RTSP, parseConfig).
+ */
+function sentenceCase(title: string): string {
+  const words = title.split(" ");
+  return [words[0].charAt(0).toUpperCase() + words[0].slice(1), ...words.slice(1).map((w) => (/^[A-Z][a-z]+$/.test(w) ? w.toLowerCase() : w))].join(" ");
 }
