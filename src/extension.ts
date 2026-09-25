@@ -1,6 +1,8 @@
+import * as path from "path";
 import * as vscode from "vscode";
 import { createMockSessionsApi } from "./api/MockSessionsApi";
 import type { SessionsApi } from "./api/SessionsApi";
+import type { Session } from "./api/types";
 import { ClaudeAdapter } from "./backend/claude";
 import { KeepAwake } from "./backend/keepAwake";
 import { RealSessionsApi } from "./backend/RealSessionsApi";
@@ -14,11 +16,27 @@ function setting(key: string): string | undefined {
   return value ? value : undefined;
 }
 
+/**
+ * Sessions belong to the open workspace: they live in its own storage, so each
+ * project sees only its sessions and two windows never write the same file.
+ * With no folder open they are kept in memory only.
+ */
+async function createStore(context: vscode.ExtensionContext): Promise<SessionStore> {
+  if (!context.storageUri) return new SessionStore();
+  const store = new SessionStore(vscode.Uri.joinPath(context.storageUri, "sessions.json").fsPath);
+  await store.load();
+  if (store.sessions.size === 0) {
+    // Sessions used to share one global file; bring over the ones that ran in this workspace.
+    const folders = (vscode.workspace.workspaceFolders || []).map((f) => f.uri.fsPath);
+    const inWorkspace = (s: Session) => folders.some((f) => s.cwd === f || s.cwd.startsWith(f + path.sep));
+    await store.load(vscode.Uri.joinPath(context.globalStorageUri, "sessions.json").fsPath, inWorkspace);
+  }
+  return store;
+}
+
 async function createApi(context: vscode.ExtensionContext): Promise<SessionsApi> {
   if (setting("backend") === "mock") return createMockSessionsApi(workspaceCwd());
-  const store = new SessionStore(vscode.Uri.joinPath(context.globalStorageUri, "sessions.json").fsPath);
-  await store.load();
-  return new RealSessionsApi(store, [new ClaudeAdapter(() => setting("claudePath"))]);
+  return new RealSessionsApi(await createStore(context), [new ClaudeAdapter(() => setting("claudePath"))]);
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {

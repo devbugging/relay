@@ -27,6 +27,8 @@ An **editor tab** (`AI Sessions: Open as Editor Tab`, or the icon in the view ti
 
 Models are never hardcoded: new ones appear once the installed CLI knows them, so keep `claude` (and later `codex`) up to date.
 
+Sessions are per project: they're saved in VS Code's storage for the open workspace, so each project lists only its own sessions (a window with no folder keeps them in memory).
+
 Settings: `aiSessions.backend` (`real` or `mock`), `aiSessions.claudePath` (if `claude` isn't on PATH, `~/.local/bin`, or Homebrew).
 
 ## Layout of the code

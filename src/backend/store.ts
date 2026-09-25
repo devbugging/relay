@@ -19,16 +19,21 @@ export class SessionStore {
 
   constructor(private readonly file?: string) {}
 
-  async load(): Promise<void> {
-    if (!this.file) return;
+  /**
+   * Reads saved sessions. `from` and `keep` let a new store take over the
+   * matching sessions of another file (used once to move old global sessions
+   * into their project); those are saved to this store's own file.
+   */
+  async load(from = this.file, keep: (s: Session) => boolean = () => true): Promise<void> {
+    if (!from) return;
     let raw: string;
     try {
-      raw = await fs.readFile(this.file, "utf8");
+      raw = await fs.readFile(from, "utf8");
     } catch {
       return;
     }
     const snap = JSON.parse(raw) as Snapshot;
-    for (const s of snap.sessions) {
+    for (const s of snap.sessions.filter(keep)) {
       // Nothing survives a reload mid-turn: the provider process went with it.
       if (s.status === "running" || s.status === "waiting") {
         s.status = "failed";
@@ -40,6 +45,7 @@ export class SessionStore {
       for (const m of msgs) m.streaming = false;
       this.messages.set(s.id, msgs);
     }
+    if (from !== this.file && this.sessions.size) this.save();
   }
 
   put(session: Session, messages: Message[] = []): void {
