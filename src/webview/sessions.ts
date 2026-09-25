@@ -32,8 +32,9 @@ function members(n: Node): Session[] {
   return [n.session, ...n.children.flatMap(members)];
 }
 
+/** Last time the session ran or the user checked it, so a just-reviewed session tops Past. */
 function latestActivity(n: Node): number {
-  return Math.max(...members(n).map((s) => s.lastActivityAt));
+  return Math.max(...members(n).map((s) => Math.max(s.lastActivityAt, s.seenAt || 0)));
 }
 
 function groupOf(n: Node): Group {

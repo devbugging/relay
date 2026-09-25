@@ -92,6 +92,7 @@ export class MockSessionsApi implements SessionsApi {
     if (!session) return;
     const list = this.messages.get(sessionId) || [];
     if (options) session.options = { ...session.options, ...options };
+    session.unread = false;
     if (list.length === 0) session.title = text.length > 48 ? text.slice(0, 45) + "…" : text;
     list.push({ id: nextId("m"), role: "user", text, createdAt: Date.now() });
     this.messages.set(sessionId, list);
@@ -168,6 +169,7 @@ export class MockSessionsApi implements SessionsApi {
     const session = this.sessions.get(sessionId);
     if (!session || !session.unread) return;
     session.unread = false;
+    session.seenAt = Date.now();
     this.emit();
   }
 

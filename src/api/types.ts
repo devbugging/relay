@@ -44,6 +44,8 @@ export interface Session {
   lastActivityAt: number;
   /** Finished since the user last opened it. */
   unread: boolean;
+  /** When the user last checked its finished output. */
+  seenAt?: number;
   /** The user marked it complete. Hidden unless all past sessions are shown. */
   archived: boolean;
   /** Parent session when this one was forked. */

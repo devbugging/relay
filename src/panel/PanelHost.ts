@@ -11,6 +11,8 @@ const PAST_WINDOW_MS = 2 * 60 * 60 * 1000;
  */
 export class PanelHost implements vscode.Disposable {
   private selectedSessionId: string | undefined;
+  /** Unread session the user has looked at; marked seen once they select something else. */
+  private viewedUnread: string | undefined;
   private showAllPast = false;
   private disposables: vscode.Disposable[] = [];
   private pushQueued = false;
@@ -27,18 +29,25 @@ export class PanelHost implements vscode.Disposable {
   }
 
   dispose(): void {
+    this.select(undefined);
     for (const d of this.disposables) d.dispose();
     this.disposables = [];
   }
 
   /** Clears the selection so the next message starts a new session. */
   startNew(): void {
-    this.selectedSessionId = undefined;
+    this.select(undefined);
     void this.push().then(() => this.post({ type: "focusInput" }));
   }
 
   refresh(): void {
     this.schedulePush();
+  }
+
+  private select(id: string | undefined): void {
+    if (this.viewedUnread && this.viewedUnread !== id) void this.api.markSeen(this.viewedUnread);
+    if (this.viewedUnread !== id) this.viewedUnread = undefined;
+    this.selectedSessionId = id;
   }
 
   private post(msg: ToWebview): Thenable<boolean> {
@@ -60,10 +69,10 @@ export class PanelHost implements vscode.Disposable {
       this.selectedSessionId = undefined;
     }
     const selected = sessions.find((s) => s.id === this.selectedSessionId);
-    // Looking at a finished session counts as having checked its output.
+    // Looking at a finished session counts as checking its output, but it stays
+    // under "Ready to review" until the user moves on, so it doesn't jump away mid-read.
     if (selected && selected.unread && !isActive(selected) && this.isVisible()) {
-      selected.unread = false;
-      await this.api.markSeen(selected.id);
+      this.viewedUnread = selected.id;
     }
     const messages = this.selectedSessionId ? await this.api.getMessages(this.selectedSessionId) : [];
     const state: UiState = {
@@ -85,12 +94,12 @@ export class PanelHost implements vscode.Disposable {
         // Open on the most recent working session, never on an unread one.
         const sessions = await this.api.listSessions();
         const working = sessions.filter(isActive).sort((a, b) => b.lastActivityAt - a.lastActivityAt)[0];
-        if (!this.selectedSessionId && working) this.selectedSessionId = working.id;
+        if (!this.selectedSessionId && working) this.select(working.id);
         await this.push();
         return;
       }
       case "selectSession":
-        this.selectedSessionId = m.sessionId;
+        this.select(m.sessionId);
         await this.push();
         return;
       case "newSession":
@@ -101,14 +110,14 @@ export class PanelHost implements vscode.Disposable {
         if (!id) {
           const created = await this.api.createSession(m.options, workspaceCwd());
           id = created.id;
-          this.selectedSessionId = id;
+          this.select(id);
         }
         await this.api.sendMessage(id, m.text, m.options);
         return;
       }
       case "fork": {
         const fork = await this.api.forkSession(m.sessionId, m.messageId);
-        this.selectedSessionId = fork.id;
+        this.select(fork.id);
         await this.push();
         return;
       }
