@@ -83,8 +83,9 @@ function providerLabel(state: UiState, s: Session): string {
   return p ? p.label : s.options.provider;
 }
 
-function providerBadge(state: UiState, s: Session): string {
-  return `<span class="provider provider-${esc(s.options.provider)}">${esc(providerLabel(state, s))}</span>`;
+function providerIcon(state: UiState, s: Session): string {
+  const icon = s.options.provider === "codex" ? icons.codex : icons.claude;
+  return `<span class="provider provider-${esc(s.options.provider)}" title="${esc(providerLabel(state, s))}">${icon}</span>`;
 }
 
 function timeCell(s: Session, now: number): string {
@@ -97,11 +98,10 @@ function card(state: UiState, node: Node, depth: number): string {
   const s = node.session;
   const isSel = s.id === state.selectedSessionId;
   const forkNote = s.forkedFromIndex ? `from msg ${s.forkedFromIndex} · ` : "";
-  const meta =
+  const where =
     depth === 0
-      ? `${providerBadge(state, s)}<span class="ellipsis">${esc(modelLabel(state, s))} · ${esc(s.options.effort)}</span>
-         <span class="right mono">${esc(s.pendingApproval ? `${s.pendingApproval.kind}: ${s.pendingApproval.detail.split(" ").slice(0, 2).join(" ")}` : s.folder)}</span>`
-      : `<span class="ellipsis">${esc(forkNote)}${esc(providerLabel(state, s))} · ${esc(modelLabel(state, s))} · ${esc(s.options.effort)}</span>`;
+      ? `<span class="mono">${esc(s.pendingApproval ? `${s.pendingApproval.kind}: ${s.pendingApproval.detail.split(" ").slice(0, 2).join(" ")}` : s.folder)}</span>`
+      : "";
   const canStop = isActive(s);
   const canComplete = !isActive(s) && !s.archived;
   const approval =
@@ -124,15 +124,19 @@ function card(state: UiState, node: Node, depth: number): string {
     <div class="card-row">
       ${icon}
       <span class="card-title ellipsis grow">${esc(s.title)}</span>
+      ${s.unread ? `<span class="unread-dot" title="Finished, not opened yet"></span>` : ""}
+    </div>
+    <div class="card-meta">
+      ${providerIcon(state, s)}
+      <span class="ellipsis grow">${esc(forkNote)}${esc(modelLabel(state, s))} · ${esc(s.options.effort)}</span>
+      ${where}
       <span class="card-tools">
         <button class="icon-btn sm" data-action="fork" data-id="${esc(s.id)}" title="Fork session" aria-label="Fork session">${icons.fork}</button>
         ${canStop ? `<button class="icon-btn sm" data-action="stop" data-id="${esc(s.id)}" title="Stop" aria-label="Stop">${icons.stop}</button>` : ""}
         ${canComplete ? `<button class="icon-btn sm" data-action="complete" data-id="${esc(s.id)}" title="Complete" aria-label="Complete session">${icons.check}</button>` : ""}
       </span>
-      ${s.unread ? `<span class="unread-dot" title="Finished, not opened yet"></span>` : ""}
       <span class="card-time">${esc(s.archived ? "completed" : timeCell(s, state.now))}</span>
     </div>
-    <div class="card-meta">${meta}</div>
     ${approval}
     ${children}
   </div>`;

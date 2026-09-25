@@ -126,13 +126,14 @@ textarea, input, select { font: inherit; color: inherit; }
 .card-title { font-weight: 600; color: var(--fg-strong); }
 .card-past .card-title, .card-archived .card-title { font-weight: 500; color: var(--fg); }
 .card-meta { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--fg-muted); padding-left: 20px; min-width: 0; }
-.card-meta .right { margin-left: auto; flex-shrink: 0; }
+.card-meta .mono { flex-shrink: 0; }
 .card-time { font-size: 11px; flex-shrink: 0; color: var(--fg-muted); }
 .card-running .card-time { color: var(--run); }
 .card-waiting .card-time { color: var(--wait); font-weight: 600; }
-.card-tools { display: none; gap: 0; margin-right: -4px; flex-shrink: 0; }
-.card:hover > .card-row > .card-tools, .card.selected > .card-row > .card-tools { display: flex; }
-.card:hover > .card-row > .card-time { display: none; }
+/* Negative margins keep the 20px buttons from growing the 11px meta line. */
+.card-tools { display: none; gap: 0; margin: -4px -4px -4px 0; flex-shrink: 0; }
+.card:hover > .card-meta > .card-tools, .card.selected > .card-meta > .card-tools { display: flex; }
+.card:hover > .card-meta > .card-time { display: none; }
 .unread-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--link); flex-shrink: 0; }
 .card-actions { display: flex; gap: 6px; padding-left: 20px; flex-wrap: wrap; }
 
@@ -144,9 +145,10 @@ textarea, input, select { font: inherit; color: inherit; }
 .status-failed { color: var(--fail); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.provider { display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 3px; font-weight: 600; flex-shrink: 0; }
-.provider-claude { background: var(--claude-bg); color: #e8a58a; }
-.provider-codex { background: var(--codex-bg); color: var(--fg); }
+.provider { display: inline-flex; width: 12px; height: 12px; flex-shrink: 0; }
+.provider svg { width: 12px; height: 12px; }
+.provider-claude { color: var(--claude); }
+.provider-codex { color: var(--fg); }
 
 /* fork tree */
 .children { display: flex; flex-direction: column; gap: 4px; padding-left: 6px; min-width: 0; }

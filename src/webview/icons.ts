@@ -19,5 +19,7 @@ export const icons = {
   terminal: wrap('<path d="M2 3l3 3-3 3M6.5 9H10"/>', 12),
   coffee: wrap('<path d="M3 6h8v3.5A3.5 3.5 0 017.5 13h-1A3.5 3.5 0 013 9.5z"/><path d="M11 7h.8a1.7 1.7 0 010 3.4H11M6 2.5v1.5M8.5 2.5v1.5"/>'),
   moon: wrap('<path d="M13 9.6A5.5 5.5 0 116.4 3a4.4 4.4 0 006.6 6.6z"/>'),
+  claude: wrap('<path d="M6 1.2v9.6M1.2 6h9.6M2.6 2.6l6.8 6.8M9.4 2.6l-6.8 6.8"/>', 12),
+  codex: wrap('<path d="M6 1.2l4.2 2.4v4.8L6 10.8 1.8 8.4V3.6z"/>', 12),
   timer: wrap('<circle cx="8" cy="9" r="5"/><path d="M8 6.5V9l1.6 1.2M6.5 2h3"/>'),
 };
