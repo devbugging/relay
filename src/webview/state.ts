@@ -13,6 +13,8 @@ export function post(m: FromWebview): void {
 export const local = {
   /** Unset until toggled: open in the editor tab, collapsed in the narrow sidebar. */
   usageOpen: undefined as boolean | undefined,
+  /** Pinned user message the user clicked open. */
+  expandedPin: undefined as string | undefined,
   composer: undefined as SessionOptions | undefined,
   composerFor: undefined as string | undefined,
 };

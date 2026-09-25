@@ -2,7 +2,7 @@ import { isActive, type Message, type Session, type ToolEvent } from "../api/typ
 import type { UiState } from "../panel/protocol";
 import { icons } from "./icons";
 import { ago, esc, level, tokens } from "./util";
-import { selected } from "./state";
+import { local, selected } from "./state";
 
 function toolIcon(kind: ToolEvent["kind"]): string {
   switch (kind) {
@@ -26,9 +26,12 @@ function tool(t: ToolEvent): string {
   return `<div class="tool">${toolIcon(t.kind)}<span>${esc(t.label)}</span><span class="target mono ellipsis">${esc(t.target)}</span>${diff}</div>`;
 }
 
-function message(m: Message, session: Session): string {
+/** The latest user message is pinned so the reply below it keeps its question in view while scrolling. */
+function message(m: Message, session: Session, pinned: boolean): string {
   if (m.role === "user") {
-    return `<div class="msg msg-user" data-mid="${esc(m.id)}"><div class="bubble">${esc(m.text)}</div></div>`;
+    const cls = pinned ? `msg-pinned ${local.expandedPin === m.id ? "expanded" : ""}` : "";
+    const toggle = pinned ? ` data-action="togglePin" data-mid="${esc(m.id)}"` : "";
+    return `<div class="msg msg-user ${cls}" data-mid="${esc(m.id)}"><div class="bubble"${toggle}>${esc(m.text)}</div></div>`;
   }
   const tools = m.tools && m.tools.length ? `<div class="tools">${m.tools.map(tool).join("")}</div>` : "";
   const text = m.text ? `<div class="msg-text">${esc(m.text)}${m.streaming ? `<span class="caret"></span>` : ""}</div>` : m.streaming ? `<div class="msg-text"><span class="caret"></span></div>` : "";
@@ -99,10 +102,11 @@ function head(state: UiState, s: Session | undefined): string {
 
 export function renderChat(state: UiState): string {
   const s = selected(state);
+  const lastUser = state.messages.map((m) => m.role).lastIndexOf("user");
   const body = !s
     ? `<div class="empty">Pick a session above, or type below to start a new one.</div>`
     : state.messages.length === 0
       ? `<div class="empty">Empty session. Say what you want done.</div>`
-      : `<div class="messages-inner">${state.messages.map((m) => message(m, s)).join("")}${approval(s)}</div>`;
+      : `<div class="messages-inner">${state.messages.map((m, i) => message(m, s, i === lastUser)).join("")}${approval(s)}</div>`;
   return `<div class="chat">${head(state, s)}<div class="messages" id="messages">${body}</div></div>`;
 }

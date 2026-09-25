@@ -39,6 +39,23 @@ function render(): void {
 
   const nextMessages = document.getElementById("messages");
   if (nextMessages) nextMessages.scrollTop = stickToBottom ? nextMessages.scrollHeight : prevScroll;
+  updatePinned();
+}
+
+/**
+ * Marks the pinned user message as stuck once the messages before it have
+ * scrolled out of view, and as clamped when its text is cut off.
+ */
+function updatePinned(): void {
+  const box = document.getElementById("messages");
+  const pin = box && (box.querySelector(".msg-pinned") as HTMLElement | null);
+  if (!box || !pin) return;
+  const bubble = pin.querySelector(".bubble") as HTMLElement;
+  pin.classList.toggle("clamped", !pin.classList.contains("expanded") && bubble.scrollHeight > bubble.clientHeight + 1);
+  const top = box.getBoundingClientRect().top;
+  const prev = pin.previousElementSibling;
+  const stuck = prev ? prev.getBoundingClientRect().bottom <= top : box.scrollTop > 0;
+  pin.classList.toggle("stuck", stuck && pin.getBoundingClientRect().top <= top + 1);
 }
 
 window.addEventListener("message", (e: MessageEvent<ToWebview>) => {
@@ -106,10 +123,20 @@ app.addEventListener("click", (e) => {
     case "toggleAllPast":
       post({ type: "toggleAllPast" });
       break;
+    case "togglePin": {
+      const expanded = local.expandedPin === mid;
+      if (!expanded && !target.closest(".clamped")) break;
+      local.expandedPin = expanded ? undefined : mid;
+      render();
+      break;
+    }
     case "copy":
       if (mid) void navigator.clipboard.writeText(messageText(mid));
       break;
   }
 });
+
+// #messages is replaced on every render, so listen in the capture phase on the stable root.
+app.addEventListener("scroll", updatePinned, true);
 
 post({ type: "ready" });
