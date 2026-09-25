@@ -6,3 +6,8 @@ Makefile
 .gitignore
 **/*.map
 !node_modules/@anthropic-ai/claude-agent-sdk/**
+.relay/**
+.claude/**
+.vscode/**
+*.vsix
+package-lock.json

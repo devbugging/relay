@@ -72,6 +72,14 @@ make run       # builds, then opens an Extension Development Host on this folder
 make watch     # rebuild on change; reload the dev host window with ⌘R
 ```
 
+## Install into your VS Code
+
+```
+make install-extension   # builds relay.vsix and installs it; reload open windows
+```
+
+`make package` only builds `relay.vsix` (about 1.5 MB: the bundle plus the Agent SDK's JavaScript; it uses your installed `claude` and `codex`, so the SDK's own CLI binary is left out). Run `make install-extension` again after changes to update the installed copy.
+
 ## Next
 
 - Transcript store on disk in one normalized format, so a session can move between providers.
