@@ -150,6 +150,14 @@ app.addEventListener("click", (e) => {
     case "copy":
       if (mid) void navigator.clipboard.writeText(messageText(mid));
       break;
+    case "copyCode": {
+      const block = target.closest(".code-block");
+      const code = block && block.querySelector("code");
+      if (code) void navigator.clipboard.writeText(code.textContent || "");
+      target.textContent = "Copied";
+      setTimeout(() => (target.textContent = "Copy"), 1200);
+      break;
+    }
   }
 });
 

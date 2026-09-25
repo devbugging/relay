@@ -3,6 +3,7 @@ import type { UiState } from "../panel/protocol";
 import { icons } from "./icons";
 import { ago, elapsed, esc, level, tokens } from "./util";
 import { local, selected } from "./state";
+import { renderMarkdown } from "./markdown";
 
 function toolIcon(kind: ToolEvent["kind"]): string {
   switch (kind) {
@@ -36,7 +37,8 @@ function message(m: Message, session: Session, pinned: boolean): string {
     return `<div class="msg msg-user ${cls}" data-mid="${esc(m.id)}"><div class="bubble"${toggle}>${esc(m.text)}</div></div>`;
   }
   const tools = m.tools && m.tools.length ? `<div class="tools">${m.tools.map(tool).join("")}</div>` : "";
-  const text = m.text ? `<div class="msg-text">${esc(m.text)}${m.streaming ? `<span class="caret"></span>` : ""}</div>` : m.streaming ? `<div class="msg-text"><span class="caret"></span></div>` : "";
+  const caret = m.streaming ? `<span class="caret"></span>` : "";
+  const text = m.text ? `<div class="msg-text md">${renderMarkdown(m.text)}${caret}</div>` : m.streaming ? `<div class="msg-text">${caret}</div>` : "";
   const toolbar = m.streaming
     ? ""
     : `<div class="msg-tools">
