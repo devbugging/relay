@@ -268,6 +268,15 @@ textarea, input, select { font: inherit; color: inherit; }
 
 .empty { padding: 24px 16px; color: var(--fg-muted); text-align: center; }
 
+.queued { flex-shrink: 0; display: flex; flex-direction: column; gap: 3px; padding: 6px 10px; border-top: 1px solid var(--border); }
+.app-wide .queued { padding: 8px 28px; }
+.queued-head { display: flex; gap: 6px; font-size: 11px; font-weight: 600; color: var(--fg); }
+.queued-head .muted { font-weight: 400; }
+.queued-item {
+  display: flex; align-items: center; gap: 4px; height: 26px; padding: 0 4px 0 10px; border-radius: 4px; font-size: 12px;
+  background: var(--bg-raised); border: 1px dashed var(--border-input); color: var(--fg); min-width: 0;
+}
+
 /* ---------- composer ---------- */
 
 .composer { flex-shrink: 0; padding: 8px 10px 10px 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }

@@ -55,11 +55,22 @@ export interface Session {
   /** 1-based index of that message in the parent, for display. */
   forkedFromIndex?: number;
   pendingApproval?: PendingApproval;
+  /** Sent while the session was busy; delivered in order as each turn ends. */
+  queued: QueuedMessage[];
   /** Context window fill as of the last model turn. */
   context?: ContextUsage;
   /** Path of the transcript file on disk. */
   transcriptPath: string;
 }
+
+export interface QueuedMessage {
+  id: string;
+  text: string;
+  createdAt: number;
+}
+
+/** "queue" waits for the running turn to end; "interrupt" stops it and sends now. */
+export type Delivery = "queue" | "interrupt";
 
 export interface ContextUsage {
   usedTokens: number;

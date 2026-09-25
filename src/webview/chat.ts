@@ -100,6 +100,24 @@ function head(state: UiState, s: Session | undefined): string {
   </div>`;
 }
 
+/** Messages waiting for the running turn to end, just above the composer. */
+function queued(s: Session): string {
+  if (!s.queued.length) return "";
+  const note = isActive(s) ? "sends when the current turn ends" : "session stopped";
+  return `<div class="queued">
+    <div class="queued-head">Queued · ${s.queued.length}<span class="muted">· ${esc(note)}</span></div>
+    ${s.queued
+      .map(
+        (q) => `<div class="queued-item">
+          <span class="ellipsis grow" title="${esc(q.text)}">${esc(q.text)}</span>
+          <button class="icon-btn sm" data-action="sendQueuedNow" data-id="${esc(s.id)}" data-qid="${esc(q.id)}" title="Send now (interrupts)" aria-label="Send now">${icons.send}</button>
+          <button class="icon-btn sm" data-action="removeQueued" data-id="${esc(s.id)}" data-qid="${esc(q.id)}" title="Remove" aria-label="Remove from queue">${icons.cross}</button>
+        </div>`,
+      )
+      .join("")}
+  </div>`;
+}
+
 export function renderChat(state: UiState): string {
   const s = selected(state);
   const lastUser = state.messages.map((m) => m.role).lastIndexOf("user");
@@ -108,5 +126,5 @@ export function renderChat(state: UiState): string {
     : state.messages.length === 0
       ? `<div class="empty">Empty session. Say what you want done.</div>`
       : `<div class="messages-inner">${state.messages.map((m, i) => message(m, s, i === lastUser)).join("")}${approval(s)}</div>`;
-  return `<div class="chat">${head(state, s)}<div class="messages" id="messages">${body}</div></div>`;
+  return `<div class="chat">${head(state, s)}<div class="messages" id="messages">${body}</div>${s ? queued(s) : ""}</div>`;
 }

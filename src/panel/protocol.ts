@@ -1,4 +1,4 @@
-import type { ApprovalDecision, Message, ProviderInfo, ProviderUsage, Session, SessionOptions } from "../api/types";
+import type { ApprovalDecision, Delivery, Message, ProviderInfo, ProviderUsage, Session, SessionOptions } from "../api/types";
 
 export type Layout = "sidebar" | "wide";
 
@@ -23,7 +23,9 @@ export type FromWebview =
   | { type: "ready" }
   | { type: "selectSession"; sessionId: string }
   | { type: "newSession" }
-  | { type: "send"; sessionId?: string; text: string; options: SessionOptions }
+  | { type: "send"; sessionId?: string; text: string; options: SessionOptions; delivery: Delivery }
+  | { type: "removeQueued"; sessionId: string; queuedId: string }
+  | { type: "sendQueuedNow"; sessionId: string; queuedId: string }
   | { type: "fork"; sessionId: string; messageId?: string }
   | { type: "stop"; sessionId: string }
   | { type: "approve"; sessionId: string; decision: ApprovalDecision }

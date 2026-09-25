@@ -1,7 +1,7 @@
-import type { Effort, ProviderId } from "../api/types";
+import { isActive, type Delivery, type Effort, type ProviderId } from "../api/types";
 import type { UiState } from "../panel/protocol";
 import { icons } from "./icons";
-import { composerOptions, local, post } from "./state";
+import { composerOptions, local, post, selected } from "./state";
 import { esc } from "./util";
 
 /**
@@ -11,7 +11,7 @@ import { esc } from "./util";
 export function renderComposer(): string {
   return `<div class="composer">
     <div class="composer-box">
-      <textarea id="input" rows="3" aria-label="Message" placeholder="Message this session…  ⌘↵ to send"></textarea>
+      <textarea id="input" rows="3" aria-label="Message" placeholder="Message…"></textarea>
       <div class="composer-bar" id="chips"></div>
     </div>
   </div>`;
@@ -21,7 +21,7 @@ export function refreshChips(state: UiState): void {
   const el = document.getElementById("chips");
   if (!el) return;
   const input = document.getElementById("input") as HTMLTextAreaElement | null;
-  if (input) input.placeholder = state.selectedSessionId ? "Message this session…  ⌘↵ to send" : "Start a new session…  ⌘↵ to send";
+  if (input) input.placeholder = placeholder(state);
   const opts = composerOptions(state);
   const provider = state.providers.find((p) => p.id === opts.provider) || state.providers[0];
   const models = provider ? provider.models : [];
@@ -40,7 +40,7 @@ export function refreshChips(state: UiState): void {
 
   el.innerHTML = `${providerSel}${modelSel}${effortSel}<span class="grow"></span>
     <button class="icon-btn" title="Attach" aria-label="Attach file">${icons.attach}</button>
-    <button class="send" id="send" title="Send (⌘↵)" aria-label="Send">${icons.send}</button>`;
+    <button class="send" id="send" title="Send (↵)" aria-label="Send">${icons.send}</button>`;
 
   const onChange = (id: string, fn: (v: string) => void) => {
     const s = document.getElementById(id) as HTMLSelectElement | null;
@@ -59,12 +59,19 @@ export function refreshChips(state: UiState): void {
   if (send) send.addEventListener("click", () => submit(state));
 }
 
-export function submit(state: UiState): void {
+function placeholder(state: UiState): string {
+  const s = selected(state);
+  if (!s) return "Start a new session…  ↵ send · ⌥↵ new line";
+  if (isActive(s)) return "Queue a message…  ↵ queue · ⇧↵ interrupt and send";
+  return "Message this session…  ↵ send · ⌥↵ new line";
+}
+
+export function submit(state: UiState, delivery: Delivery = "queue"): void {
   const input = document.getElementById("input") as HTMLTextAreaElement | null;
   if (!input) return;
   const text = input.value.trim();
   if (!text) return;
-  post({ type: "send", sessionId: state.selectedSessionId, text, options: { ...composerOptions(state) } });
+  post({ type: "send", sessionId: state.selectedSessionId, text, options: { ...composerOptions(state) }, delivery });
   input.value = "";
   local.composerFor = undefined;
 }
@@ -72,11 +79,15 @@ export function submit(state: UiState): void {
 export function bindComposerOnce(getState: () => UiState | undefined): void {
   const input = document.getElementById("input") as HTMLTextAreaElement | null;
   if (!input) return;
+  // ↵ sends (queued while the session works), ⇧↵ interrupts and sends, ⌥↵ is a new line.
   input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      const s = getState();
-      if (s) submit(s);
+    if (e.key !== "Enter" || e.isComposing) return;
+    e.preventDefault();
+    if (e.altKey) {
+      input.setRangeText("\n", input.selectionStart, input.selectionEnd, "end");
+      return;
     }
+    const s = getState();
+    if (s) submit(s, e.shiftKey ? "interrupt" : "queue");
   });
 }

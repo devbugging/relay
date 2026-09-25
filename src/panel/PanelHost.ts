@@ -113,7 +113,18 @@ export class PanelHost implements vscode.Disposable {
           id = created.id;
           this.select(id);
         }
-        await this.api.sendMessage(id, m.text, m.options);
+        await this.api.sendMessage(id, m.text, m.options, m.delivery);
+        return;
+      }
+      case "removeQueued":
+        await this.api.removeQueued(m.sessionId, m.queuedId);
+        return;
+      case "sendQueuedNow": {
+        const session = (await this.api.listSessions()).find((s) => s.id === m.sessionId);
+        const item = session && session.queued.find((q) => q.id === m.queuedId);
+        if (!item) return;
+        await this.api.removeQueued(m.sessionId, m.queuedId);
+        await this.api.sendMessage(m.sessionId, item.text, undefined, "interrupt");
         return;
       }
       case "fork": {

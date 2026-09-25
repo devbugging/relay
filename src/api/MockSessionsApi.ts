@@ -1,5 +1,5 @@
 import type { SessionsApi, Unsubscribe } from "./SessionsApi";
-import { isActive, type ApprovalDecision, type Message, type ProviderInfo, type ProviderUsage, type Session, type SessionOptions, type ToolEvent } from "./types";
+import { isActive, type ApprovalDecision, type Delivery, type Message, type ProviderInfo, type ProviderUsage, type Session, type SessionOptions, type ToolEvent } from "./types";
 
 const MIN = 60_000;
 
@@ -55,6 +55,8 @@ export class MockSessionsApi implements SessionsApi {
   private sessions = new Map<string, Session>();
   private messages = new Map<string, Message[]>();
   private usage: ProviderUsage[] = [];
+  /** Current turn per session; a stream from an older turn stops itself. */
+  private turns = new Map<string, number>();
   private listeners = new Set<() => void>();
   private timers = new Set<ReturnType<typeof setTimeout>>();
   private disposed = false;
@@ -74,7 +76,11 @@ export class MockSessionsApi implements SessionsApi {
   }
 
   async listSessions(): Promise<Session[]> {
-    return [...this.sessions.values()].map((s) => ({ ...s, context: s.context ? { ...s.context } : undefined }));
+    return [...this.sessions.values()].map((s) => ({
+      ...s,
+      queued: s.queued.map((q) => ({ ...q })),
+      context: s.context ? { ...s.context } : undefined,
+    }));
   }
 
   async getMessages(sessionId: string): Promise<Message[]> {
@@ -96,6 +102,7 @@ export class MockSessionsApi implements SessionsApi {
       lastActivityAt: now,
       unread: false,
       archived: false,
+      queued: [],
       transcriptPath: `${cwd}/.ai/sessions/${now}.jsonl`,
     };
     this.sessions.set(session.id, session);
@@ -104,11 +111,50 @@ export class MockSessionsApi implements SessionsApi {
     return session;
   }
 
-  async sendMessage(sessionId: string, text: string, options?: Partial<SessionOptions>): Promise<void> {
+  async sendMessage(sessionId: string, text: string, options?: Partial<SessionOptions>, delivery: Delivery = "queue"): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) return;
-    const list = this.messages.get(sessionId) || [];
     if (options) session.options = { ...session.options, ...options };
+    if (isActive(session)) {
+      if (delivery === "queue") {
+        session.queued.push({ id: nextId("q"), text, createdAt: Date.now() });
+        this.emit();
+        return;
+      }
+      this.interrupt(session);
+    }
+    this.deliver(session, text);
+  }
+
+  async removeQueued(sessionId: string, queuedId: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    session.queued = session.queued.filter((q) => q.id !== queuedId);
+    this.emit();
+  }
+
+  /** Stops the running turn without finishing it, so nothing is flagged unread. */
+  private interrupt(session: Session): void {
+    session.pendingApproval = undefined;
+    const list = this.messages.get(session.id) || [];
+    const last = list[list.length - 1];
+    if (last && last.streaming) {
+      last.streaming = false;
+      last.text = last.text ? `${last.text} [interrupted]` : "[interrupted]";
+    }
+    session.status = "done";
+  }
+
+  /** The turn ended: start the next queued message, or settle into done. */
+  private finishTurn(session: Session, status: Session["status"]): void {
+    const next = session.queued.shift();
+    if (next) this.deliver(session, next.text);
+    else this.touch(session, status);
+  }
+
+  private deliver(session: Session, text: string): void {
+    const sessionId = session.id;
+    const list = this.messages.get(sessionId) || [];
     session.unread = false;
     if (!session.context) session.context = { usedTokens: 14_000, limitTokens: contextLimit(session.options.model) };
     if (list.length === 0) session.title = text.length > 48 ? text.slice(0, 45) + "…" : text;
@@ -137,6 +183,7 @@ export class MockSessionsApi implements SessionsApi {
       lastActivityAt: now,
       unread: false,
       archived: false,
+      queued: [],
       parentId: parent.id,
       forkedFromMessageId: kept.length ? kept[kept.length - 1].id : undefined,
       forkedFromIndex: kept.length,
@@ -167,7 +214,7 @@ export class MockSessionsApi implements SessionsApi {
     const list = this.messages.get(sessionId) || [];
     if (decision === "deny") {
       list.push({ id: nextId("m"), role: "assistant", text: "Understood, skipping that command.", createdAt: Date.now() });
-      this.touch(session, "done");
+      this.finishTurn(session, "done");
       return;
     }
     const tool: ToolEvent = { id: nextId("t"), kind: "run", label: "Ran", target: approval.detail, detail: "exit 0", ok: true };
@@ -255,10 +302,12 @@ export class MockSessionsApi implements SessionsApi {
     const msg: Message = { id: nextId("m"), role: "assistant", text: "", createdAt: Date.now(), streaming: true };
     list.push(msg);
     const words = fullText.split(" ");
+    const turn = (this.turns.get(sessionId) || 0) + 1;
+    this.turns.set(sessionId, turn);
     let i = 0;
     const step = () => {
       const s = this.sessions.get(sessionId);
-      if (!s || s.status !== "running") return;
+      if (!s || s.status !== "running" || this.turns.get(sessionId) !== turn) return;
       i += 2;
       msg.text = words.slice(0, i).join(" ");
       s.lastActivityAt = Date.now();
@@ -266,7 +315,7 @@ export class MockSessionsApi implements SessionsApi {
       if (i >= words.length) {
         msg.text = fullText;
         msg.streaming = false;
-        this.touch(s, "done");
+        this.finishTurn(s, "done");
         return;
       }
       this.emit();
@@ -313,6 +362,7 @@ export class MockSessionsApi implements SessionsApi {
       folder,
       unread: false,
       archived: false,
+      queued: [],
       transcriptPath: `${cwd}/.ai/sessions/${id}.jsonl`,
     });
     const put = (s: Session, msgs: Message[]) => {

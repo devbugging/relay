@@ -16,7 +16,7 @@ A **sidebar view** (`AI Sessions` in the activity bar). Sessions are listed in t
 
 **Complete** (top right of the chat, or the check on a card) archives a session and its finished forks. Sending a message to a completed session brings it back. Forks nest under their parent, and the whole tree sits in the group of its most active member.
 
-The chat sits below the list, with a composer that picks provider, model and effort.
+The chat sits below the list, with a composer that picks provider, model and effort. **↵** sends; while the session is working it queues instead, and queued messages go out in order as each turn ends (shown above the composer, with send-now and remove). **⇧↵** interrupts the running turn and sends immediately. **⌥↵** is a new line. Your latest message stays pinned at the top of the chat while the reply scrolls under it.
 
 An **editor tab** (`AI Sessions: Open as Editor Tab`, or the icon in the view title) shows the same thing in two columns: sessions on the left, the open session on the right. Typing with no session selected, or the `+` in the view title, starts a new one.
 

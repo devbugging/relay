@@ -1,4 +1,4 @@
-import type { ApprovalDecision, Message, ProviderInfo, ProviderUsage, Session, SessionOptions } from "./types";
+import type { ApprovalDecision, Delivery, Message, ProviderInfo, ProviderUsage, Session, SessionOptions } from "./types";
 
 export type Unsubscribe = () => void;
 
@@ -21,8 +21,13 @@ export interface SessionsApi {
   getMessages(sessionId: string): Promise<Message[]>;
 
   createSession(options: SessionOptions, cwd: string): Promise<Session>;
-  /** Also brings an archived session (and its ancestors) back. */
-  sendMessage(sessionId: string, text: string, options?: Partial<SessionOptions>): Promise<void>;
+  /**
+   * Sends right away when the session is idle. While it's working, "queue"
+   * holds the message until the turn ends and "interrupt" stops the turn first.
+   * Also brings an archived session (and its ancestors) back.
+   */
+  sendMessage(sessionId: string, text: string, options?: Partial<SessionOptions>, delivery?: Delivery): Promise<void>;
+  removeQueued(sessionId: string, queuedId: string): Promise<void>;
   forkSession(sessionId: string, fromMessageId?: string): Promise<Session>;
   stopSession(sessionId: string): Promise<void>;
   respondToApproval(sessionId: string, decision: ApprovalDecision): Promise<void>;

@@ -123,6 +123,12 @@ app.addEventListener("click", (e) => {
     case "toggleAllPast":
       post({ type: "toggleAllPast" });
       break;
+    case "removeQueued":
+      post({ type: "removeQueued", sessionId: id, queuedId: target.dataset.qid || "" });
+      break;
+    case "sendQueuedNow":
+      post({ type: "sendQueuedNow", sessionId: id, queuedId: target.dataset.qid || "" });
+      break;
     case "togglePin": {
       const expanded = local.expandedPin === mid;
       if (!expanded && !target.closest(".clamped")) break;
