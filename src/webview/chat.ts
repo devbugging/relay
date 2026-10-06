@@ -225,15 +225,6 @@ function runClock(state: UiState, s: Session): string {
   return `<button class="run-clock ${near ? "near" : ""}" data-action="setRunLimit" data-id="${esc(s.id)}" title="${esc(title)}" aria-label="${esc(title)}">${icons.timer}${text}</button>`;
 }
 
-/** Asks the other provider to review this session's work, in a subsession with the message drafted. */
-function secondOpinion(state: UiState, s: Session): string {
-  if (isActive(s) || !state.messages.some((m) => m.role === "assistant")) return "";
-  const other = state.providers.find((p) => p.id !== s.options.provider && !p.unavailable && p.models.length);
-  if (!other) return "";
-  const title = `Second opinion from ${other.label}: opens a subsession with a review request drafted for you to send`;
-  return `<button class="icon-btn" data-action="secondOpinion" data-id="${esc(s.id)}" title="${esc(title)}" aria-label="${esc(`Second opinion from ${other.label}`)}">${icons.opinion}</button>`;
-}
-
 /** A run of a scheduled task links back to the task. */
 function scheduledTag(state: UiState, s: Session): string {
   if (state.remote || !s.scheduledTaskId) return "";
@@ -295,7 +286,6 @@ function head(state: UiState, s: Session | undefined): string {
     ${worktreeToggle(state, s)}
     ${browserToggle(state, s)}
     ${keepAwakeToggle(state)}
-    ${secondOpinion(state, s)}
     ${scheduledTag(state, s)}
     <button class="icon-btn" data-action="fork" data-id="${esc(s.id)}" title="Fork session" aria-label="Fork session">${icons.fork}</button>
     ${isActive(s) ? `<button class="icon-btn" data-action="stop" data-id="${esc(s.id)}" title="Stop" aria-label="Stop session">${icons.stop}</button>` : ""}

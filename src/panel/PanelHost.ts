@@ -10,7 +10,6 @@ import { remoteStatus } from "../remote/status";
 import { findLinkable, resolveIn } from "./fileLinks";
 import { searchFiles } from "./fileSearch";
 import { askForKey, modelHintsEnabled, onDidChangeJevKey, setModelHints, suggestModel } from "./modelHints";
-import { secondOpinionDraft } from "./secondOpinion";
 import { newSessionDefaults, settingsView, updateSetting } from "./settings";
 import type { FromWebview, Layout, ToWebview, UiState } from "./protocol";
 
@@ -296,8 +295,6 @@ export class PanelHost implements vscode.Disposable {
         await this.push();
         return;
       }
-      case "secondOpinion":
-        await this.secondOpinion(m.sessionId);
         return;
       case "stop":
         await this.api.stopSession(m.sessionId);
@@ -418,18 +415,6 @@ export class PanelHost implements vscode.Disposable {
       "Delete",
     );
     if (pick) await this.scheduler.remove(taskId);
-  }
-
-  /** A subsession with the other provider's default model; the drafted message waits for the user to send it. */
-  private async secondOpinion(sessionId: string): Promise<void> {
-    const [sessions, providers] = await Promise.all([this.api.listSessions(), this.api.listProviders()]);
-    const parent = sessions.find((s) => s.id === sessionId);
-    const other = parent && providers.find((p) => p.id !== parent.options.provider && !p.unavailable && p.models.length);
-    if (!parent || !other) return;
-    const model = other.models[0];
-    const options = { provider: other.id, model: model.id, effort: model.defaultEffort || model.efforts[0] || "high" };
-    const child = await this.api.createSubsession(parent.id, options, `Second opinion on ${parent.title}`);
-    this.insertText(child.id, secondOpinionDraft(parent, await this.api.getMessages(parent.id)));
   }
 
   private async askRunLimit(sessionId: string): Promise<void> {

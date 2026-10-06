@@ -98,12 +98,6 @@ Type **@** and start typing to fuzzy-search the project's files. Spaces are fine
 
 <img src="img/status.png" width="320" alt="Status panel with Claude and Codex usage bars">
 
-### Second opinion
-
-The speech-bubble button opens a subsession with the *other* agent and drafts a review request for you: what was asked, what the agent said, which files changed, and where to find the diff. Edit it if you like, then send.
-
-![A drafted second-opinion request to Codex](img/second-opinion.png)
-
 ### Inspector
 
 The bug icon shows what a Claude session loaded and how it ran: model and version, cost, what's filling the context window, CLAUDE.md and other memory files, every file touched and tool call with its timing, and events such as retries, failed hooks and compactions.

@@ -321,9 +321,6 @@ app.addEventListener("click", (e) => {
       e.stopPropagation();
       post({ type: "fork", sessionId: id });
       break;
-    case "secondOpinion":
-      post({ type: "secondOpinion", sessionId: id });
-      break;
     case "forkAt":
       post({ type: "fork", sessionId: id, messageId: mid });
       break;
