@@ -7,6 +7,7 @@ import { keepAwakeSupported } from "../backend/keepAwake";
 import { cleanTaskInput, type Scheduler } from "../backend/scheduler";
 import { isGitRepo } from "../backend/worktree";
 import { remoteStatus } from "../remote/status";
+import { editorSelection } from "./editorSelection";
 import { findLinkable, resolveIn } from "./fileLinks";
 import { searchFiles } from "./fileSearch";
 import { askForKey, modelHintsEnabled, onDidChangeJevKey, setModelHints, suggestModel } from "./modelHints";
@@ -71,6 +72,7 @@ export class PanelHost implements vscode.Disposable {
       onDidChangeJevKey(() => this.schedulePush()),
       remoteStatus.onDidChange(() => this.schedulePush()),
     );
+    if (!remote) this.disposables.push(editorSelection.onDidChange(() => this.schedulePush()));
   }
 
   dispose(): void {
@@ -101,6 +103,11 @@ export class PanelHost implements vscode.Disposable {
     this.showSettings = false;
     this.select(sessionId);
     void this.push().then(() => this.post({ type: "insertText", text }));
+  }
+
+  /** Puts the cursor in the message box, keeping whatever is open. */
+  focusInput(): void {
+    void this.post({ type: "focusInput" });
   }
 
   /** Switches between the sessions and the scheduled tasks. */
@@ -192,6 +199,8 @@ export class PanelHost implements vscode.Disposable {
       settings: this.showSettings ? await settingsView() : undefined,
       inspecting: this.inspecting,
       inspect,
+      selection: this.remote ? undefined : editorSelection.current,
+      pinned: this.remote ? [] : editorSelection.pinned,
       now: Date.now(),
     };
     await this.post({ type: "state", state });
@@ -259,6 +268,8 @@ export class PanelHost implements vscode.Disposable {
         await this.deleteTask(m.taskId);
         return;
       case "send": {
+        // The message carries the added selections, so they're used up.
+        if (!this.remote) editorSelection.clearPinned();
         let id = m.sessionId;
         if (!id) {
           const created = await this.api.createSession(m.options, workspaceCwd(), m.worktree);
@@ -338,6 +349,9 @@ export class PanelHost implements vscode.Disposable {
         return;
       case "attachFiles":
         if (!this.remote) await this.attachFiles(m.sessionId);
+        return;
+      case "unpinSelection":
+        if (!this.remote) editorSelection.unpin(m.index);
         return;
     }
   }
