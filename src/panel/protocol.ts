@@ -59,9 +59,7 @@ export interface UiState {
   messages: Message[];
   /** Path-like strings in the open session's messages that exist on disk, so they render as file links. */
   linkable: string[];
-  /** Past sessions active within this window are listed without expanding. */
-  pastWindowMs: number;
-  /** Also list older and completed sessions. */
+  /** Also list completed sessions. */
   showAllPast: boolean;
   /** Keep the computer awake while an agent works; undefined where that isn't supported. */
   keepAwake?: boolean;

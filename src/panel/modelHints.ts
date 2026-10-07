@@ -32,7 +32,7 @@ const keyChanged = new vscode.EventEmitter<void>();
 /** The key was saved; the settings screen shows whether there is one. */
 export const onDidChangeJevKey = keyChanged.event;
 
-/** Keeps the `relay.modelHints` context key in step, for the sidebar's toggle. */
+/** Keeps the `relay.modelHints` context key in step, for the command's toggle. */
 export function initModelHints(context: vscode.ExtensionContext, providers: () => Promise<ProviderInfo[]>): void {
   secrets = context.secrets;
   listProviders = providers;

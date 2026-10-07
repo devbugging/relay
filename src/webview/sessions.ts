@@ -12,7 +12,7 @@ interface Node {
 }
 
 /** Where a session and its forks are listed. A tree moves as one unit, placed by its most active member. */
-type Group = "working" | "review" | "past" | "archived";
+type Group = "working" | "review" | "open" | "archived";
 
 function buildTree(sessions: Session[]): Node[] {
   const byId = new Map<string, Node>();
@@ -35,7 +35,7 @@ function members(n: Node): Session[] {
   return [n.session, ...n.children.flatMap(members)];
 }
 
-/** Last time the session ran or the user checked it, so a just-reviewed session tops Past. */
+/** Last time the session ran or the user checked it, so a just-reviewed session tops Open. */
 function latestActivity(n: Node): number {
   return Math.max(...members(n).map((s) => Math.max(s.lastActivityAt, s.seenAt || 0)));
 }
@@ -55,10 +55,10 @@ function groupOf(n: Node): Group {
   if (all.some(working)) return "working";
   const live = all.filter((s) => !s.archived);
   if (live.length === 0) return "archived";
-  return live.some((s) => s.unread) ? "review" : "past";
+  return live.some((s) => s.unread) ? "review" : "open";
 }
 
-/** A fork whose whole subtree was completed stays hidden unless all past sessions are shown. */
+/** A fork whose whole subtree was completed stays hidden unless completed sessions are shown. */
 function completed(n: Node): boolean {
   return members(n).every((s) => s.archived);
 }
@@ -142,6 +142,14 @@ function card(state: UiState, node: Node, depth: number): string {
         : "";
   const canStop = isActive(s);
   const canComplete = !isActive(s) && !s.archived;
+  const tools = canStop
+    ? `<button class="icon-btn sm" data-action="stop" data-id="${esc(s.id)}" title="Stop" aria-label="Stop">${icons.stop}</button>`
+    : hasBackground(s)
+      ? `<button class="icon-btn sm" data-action="stop" data-id="${esc(s.id)}" title="Stop the background work" aria-label="Stop the background work">${icons.stop}</button>`
+      : "";
+  const complete = canComplete
+    ? `<button class="icon-btn sm card-complete" data-action="complete" data-id="${esc(s.id)}" title="Complete" aria-label="Complete session">${icons.check}</button>`
+    : "";
   const approval =
     s.pendingApproval && (isSel || depth === 0)
       ? `<div class="card-actions">
@@ -171,13 +179,8 @@ function card(state: UiState, node: Node, depth: number): string {
       ${s.scheduledTaskId ? `<span class="mode-tag card-tag">Scheduled</span>` : ""}
       <span class="ellipsis grow">${esc(forkNote)}${esc(modelLabel(state, s))} · ${esc(s.options.effort)}</span>
       ${approvalNote}
-      <span class="card-tools">
-        <button class="icon-btn sm" data-action="fork" data-id="${esc(s.id)}" title="Fork session" aria-label="Fork session">${icons.fork}</button>
-        ${canStop ? `<button class="icon-btn sm" data-action="stop" data-id="${esc(s.id)}" title="Stop" aria-label="Stop">${icons.stop}</button>` : ""}
-        ${!canStop && hasBackground(s) ? `<button class="icon-btn sm" data-action="stop" data-id="${esc(s.id)}" title="Stop the background work" aria-label="Stop the background work">${icons.stop}</button>` : ""}
-        ${canComplete ? `<button class="icon-btn sm" data-action="complete" data-id="${esc(s.id)}" title="Complete" aria-label="Complete session">${icons.check}</button>` : ""}
-      </span>
       <span class="card-time" ${isActive(s) ? "" : `title="${esc(`Started: ${ago(s.createdAt, state.now)} · Last active: ${ago(s.lastActivityAt, state.now)}`)}"`}>${esc(s.archived ? "completed" : timeCell(s, state.now))}</span>
+      ${tools || complete ? `<span class="card-tools">${tools}${complete}</span>` : ""}
     </div>
     ${approval}
     ${children}
@@ -189,9 +192,9 @@ function group(state: UiState, title: string, note: string, nodes: Node[], tools
     ${nodes.map((n) => card(state, n, 0)).join("")}`;
 }
 
-/** With all past sessions shown, Past's heading collapses them again and searches their titles. */
+/** With completed sessions shown, Past's heading collapses them again and searches their titles. */
 function pastTools(): string {
-  return `<button class="icon-btn sm past-collapse" data-action="toggleAllPast" title="Hide older and completed" aria-label="Hide older and completed">${icons.chevron}</button>
+  return `<button class="icon-btn sm past-collapse" data-action="toggleAllPast" title="Hide completed" aria-label="Hide completed">${icons.chevron}</button>
     <input class="past-search" type="search" placeholder="Search titles" aria-label="Search past session titles" value="${esc(local.pastQuery)}">`;
 }
 
@@ -206,43 +209,33 @@ function remoteToggle(state: UiState): string {
   return `<button class="icon-btn ${on ? "on" : ""}" data-action="toggleRemote" title="${title}" aria-label="Remote access" aria-pressed="${on}">${icons.phone}</button>`;
 }
 
-/** On: Jev suggests a model for each message, next to the model dropdown. */
-function modelHintsToggle(state: UiState): string {
-  if (state.modelHints === undefined) return "";
-  const on = state.modelHints;
-  const title = on
-    ? "Jev suggests a model for each message from how hard it looks; ⇧⌘↵ sends with the suggestion. Click to turn off."
-    : "Let Jev suggest a model for each message: a quick one for simple changes, the strongest for open-ended work. Asks for your TypeSafe API key the first time; what you type is sent to TypeSafe.";
-  return `<button class="icon-btn ${on ? "on" : ""}" data-action="toggleModelHints" title="${esc(title)}" aria-label="Model suggestions from Jev" aria-pressed="${on}">${icons.gauge}</button>`;
-}
-
 export function renderSessions(state: UiState): string {
-  const cutoff = state.now - state.pastWindowMs;
   const working: Node[] = [];
   const review: Node[] = [];
-  const recent: Node[] = [];
-  const older: Node[] = [];
+  const open: Node[] = [];
+  const completedRoots: Node[] = [];
   for (const root of buildTree(state.sessions)) {
     const g = groupOf(root);
     if (g === "working") working.push(root);
     else if (g === "review") review.push(root);
-    else if (g === "past" && latestActivity(root) >= cutoff) recent.push(root);
-    else older.push(root);
+    else if (g === "open") open.push(root);
+    else completedRoots.push(root);
   }
   const byLatest = (a: Node, b: Node) => latestActivity(b) - latestActivity(a);
   working.sort((a, b) => runStart(b) - runStart(a));
   review.sort(byLatest);
-  const expanded = state.showAllPast && older.length > 0;
+  open.sort(byLatest);
+  // Only completed sessions become Past; the rest stay listed however old they get.
+  const expanded = state.showAllPast && completedRoots.length > 0;
   const query = expanded ? local.pastQuery.trim().toLowerCase() : "";
-  const past = (state.showAllPast ? recent.concat(older) : recent).filter((n) => !query || matches(n, query)).sort(byLatest);
+  const past = expanded ? completedRoots.filter((n) => !query || matches(n, query)).sort(byLatest) : [];
 
-  const hours = Math.round(state.pastWindowMs / 3_600_000);
   const toggle =
-    older.length && !state.showAllPast
+    completedRoots.length && !state.showAllPast
       ? `<button class="older-toggle" data-action="toggleAllPast">${icons.chevron}
-           Show all past sessions <span class="muted">· ${older.length} more</span></button>`
+           Show past sessions <span class="muted">· ${completedRoots.length} completed</span></button>`
       : "";
-  const nothing = !working.length && !review.length && !past.length && !query;
+  const nothing = !working.length && !review.length && !open.length && !expanded;
 
   const head =
     state.layout === "wide"
@@ -250,7 +243,6 @@ export function renderSessions(state: UiState): string {
            <button class="icon-btn" data-action="openBrowser" title="Open your app in Relay's browser to add notes on elements" aria-label="Open in Browser">${icons.globe}</button>
            ${scheduledToggle(state)}
            ${remoteToggle(state)}
-           ${modelHintsToggle(state)}
            ${settingsToggle(state)}
            <button class="btn btn-primary" data-action="newSession" title="New session">${icons.plus}<span class="btn-text">New</span></button></div>`
       : "";
@@ -260,7 +252,8 @@ export function renderSessions(state: UiState): string {
     <div class="sessions-list">
       ${working.length ? group(state, "Working", String(working.length), working) : ""}
       ${review.length ? group(state, "Ready to review", String(review.length), review) : ""}
-      ${past.length || expanded ? group(state, "Past", state.showAllPast ? "all" : `last ${hours}h`, past, expanded ? pastTools() : "") : ""}
+      ${open.length ? group(state, "Open", String(open.length), open) : ""}
+      ${expanded ? group(state, "Past", "completed", past, pastTools()) : ""}
       ${expanded && !past.length ? `<div class="empty">No past sessions match.</div>` : ""}
       ${nothing ? `<div class="empty">No recent sessions. Type below to start one.</div>` : ""}
       ${toggle}

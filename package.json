@@ -140,14 +140,9 @@
           "group": "navigation@5"
         },
         {
-          "command": "relay.toggleModelHints",
-          "when": "view == relay.sidebar",
-          "group": "navigation@6"
-        },
-        {
           "command": "relay.settings",
           "when": "view == relay.sidebar",
-          "group": "navigation@7"
+          "group": "navigation@6"
         }
       ],
       "webview/context": [

@@ -144,9 +144,9 @@ textarea, input, select { font: inherit; color: inherit; }
 .card-running .card-time { color: var(--run); }
 .card-waiting .card-time { color: var(--wait); font-weight: 600; }
 /* Negative margins keep the 20px buttons from growing the 11px meta line. */
-.card-tools { display: none; gap: 0; margin: -4px -4px -4px 0; flex-shrink: 0; }
-.card:hover > .card-meta > .card-tools, .card.selected > .card-meta > .card-tools { display: flex; }
-.card:hover > .card-meta > .card-time { display: none; }
+.card-tools { display: flex; gap: 0; margin: -4px -4px -4px 0; flex-shrink: 0; }
+.card-complete { color: var(--done); }
+.card-complete:hover { color: var(--done); background: var(--done-bg); }
 .unread-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--link); flex-shrink: 0; }
 .card-actions { display: flex; gap: 6px; padding-left: 20px; flex-wrap: wrap; }
 

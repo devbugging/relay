@@ -14,7 +14,6 @@ import { askForKey, modelHintsEnabled, onDidChangeJevKey, setModelHints, suggest
 import { newSessionDefaults, settingsView, updateSetting } from "./settings";
 import type { FromWebview, Layout, ToWebview, UiState } from "./protocol";
 
-const PAST_WINDOW_MS = 2 * 60 * 60 * 1000;
 
 /** Where a PanelHost's UI lives: a VS Code webview, or the phone over the network. */
 export interface UiChannel {
@@ -184,7 +183,6 @@ export class PanelHost implements vscode.Disposable {
       selectedSessionId: this.selectedSessionId,
       messages,
       linkable,
-      pastWindowMs: PAST_WINDOW_MS,
       showAllPast: this.showAllPast,
       keepAwake: keepAwakeSupported ? keepAwakeEnabled() : undefined,
       modelHints: this.remote ? undefined : modelHintsEnabled(),
