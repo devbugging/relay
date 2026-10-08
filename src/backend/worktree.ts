@@ -6,6 +6,8 @@ import type { Worktree } from "../api/types";
 
 /** Where session worktrees live, outside the project so search and watchers don't see copies. */
 const WORKTREES_DIR = path.join(os.homedir(), ".relay", "worktrees");
+/** Finished worktrees are moved here instead of deleted, so files git never had (ignored, untracked) survive. */
+const TRASH_DIR = path.join(os.homedir(), ".relay", "trash");
 
 export type MergeResult = { ok: true; merged: boolean } | { ok: false; conflicts: string[] } | { ok: false; error: string };
 
@@ -95,15 +97,22 @@ async function unstageOutsideLinks(wtPath: string): Promise<void> {
 async function untrackedInTheWay(projectCwd: string, wt: Worktree): Promise<string[]> {
   const root = await git(projectCwd, ["rev-parse", "--show-toplevel"]);
   const added = (await git(projectCwd, ["diff", "--name-only", "--no-renames", "--diff-filter=A", "-z", wt.base, wt.branch])).split("\0").filter(Boolean);
-  const found: string[] = [];
-  for (const file of added) if (await exists(path.join(root, file))) found.push(file);
-  return found;
+  const found = new Set<string>();
+  for (const file of added) {
+    if (await exists(path.join(root, file))) found.add(file);
+    // A file or symlink where the branch needs a folder gets replaced too.
+    for (let dir = path.dirname(file); dir !== "."; dir = path.dirname(dir)) {
+      const stat = await fs.lstat(path.join(root, dir)).catch(() => undefined);
+      if (stat && !stat.isDirectory()) found.add(dir);
+    }
+  }
+  return [...found];
 }
 
 /**
  * Commits what's left in the worktree, brings its branch up to date with the
- * base, merges it into the project with a merge commit, then removes the
- * worktree and branch. Conflicts are left for the agent to resolve in the
+ * base, merges it into the project with a merge commit, then moves the
+ * worktree to the trash and deletes the branch. Conflicts are left for the agent to resolve in the
  * worktree; nothing is changed in the project folder unless the merge is clean.
  */
 export async function mergeWorktree(projectCwd: string, wt: Worktree, title: string): Promise<MergeResult> {
@@ -144,8 +153,9 @@ export async function mergeWorktree(projectCwd: string, wt: Worktree, title: str
       }
     }
 
-    // Everything tracked is committed by now; --force only drops ignored files like build output.
-    await git(projectCwd, ["worktree", "remove", "--force", wt.path]);
+    await fs.mkdir(TRASH_DIR, { recursive: true });
+    await fs.rename(wt.path, path.join(TRASH_DIR, `${path.basename(wt.path)}-${Date.now()}`));
+    await git(projectCwd, ["worktree", "prune"]);
     await git(projectCwd, ["branch", "-d", wt.branch]);
     return { ok: true, merged: ahead > 0 };
   } catch (err) {
